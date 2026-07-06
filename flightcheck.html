@@ -1,0 +1,1389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UAS Flight DC-FRZ Check Approximator</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
+    <style>
+        :root {
+            --panel-bg: #ffffff;
+            --panel-border: #d1d5db;
+            --fg: #111827;
+            --fg-secondary: #374151;
+            --muted: #6b7280;
+            --accent: #d97706;
+            --accent-hover: #b45309;
+            --accent-light: #fef3c7;
+            --red: #dc2626;
+            --red-bg: #fef2f2;
+            --red-border: #fca5a5;
+            --yellow: #b45309;
+            --yellow-bg: #fffbeb;
+            --yellow-border: #fde68a;
+            --green: #15803d;
+            --green-bg: #f0fdf4;
+            --green-border: #86efac;
+            --gray-bg: #f9fafb;
+            --gray-border: #e5e7eb;
+            --input-bg: #f9fafb;
+            --input-border: #d1d5db;
+            --stat-bg: #f3f4f6;
+        }
+        * { box-sizing: border-box; }
+        body, html {
+            margin: 0; padding: 0; height: 100%;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background: #e5e7eb; color: var(--fg);
+        }
+        #map { width: 100%; height: 100%; }
+
+        .panel {
+            position: absolute; top: 14px; left: 14px; width: 356px; max-height: calc(100% - 28px);
+            overflow-y: auto; background: var(--panel-bg);
+            border: 1px solid var(--panel-border); border-radius: 12px;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.12), 0 1px 3px rgba(0,0,0,0.06);
+            z-index: 1000; padding: 24px 22px 18px;
+        }
+        .panel::-webkit-scrollbar { width: 5px; }
+        .panel::-webkit-scrollbar-track { background: transparent; }
+        .panel::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 4px; }
+        .panel::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+
+        .panel-header { margin-bottom: 20px; }
+        .panel-header h1 { font-size: 1.25rem; margin: 0 0 2px 0; font-weight: 800; letter-spacing: -0.02em; color: var(--fg); }
+        .panel-header .sub { font-size: 0.75rem; color: var(--muted); margin: 0; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
+
+        .location-row { display: flex; gap: 8px; margin-bottom: 8px; }
+        .input-row { display: flex; gap: 8px; margin-bottom: 12px; }
+        .input-row input {
+            flex: 1; padding: 10px 13px; background: var(--input-bg); border: 1.5px solid var(--input-border);
+            border-radius: 8px; font-size: 0.88rem; color: var(--fg); outline: none; transition: all 0.2s; font-family: inherit;
+        }
+        .input-row input::placeholder { color: #9ca3af; }
+        .input-row input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(217,119,6,0.12); background: #fff; }
+        .input-row button, .location-row button {
+            padding: 10px 18px; background: var(--accent); color: #fff; border: none; border-radius: 8px;
+            font-weight: 700; cursor: pointer; transition: all 0.2s; font-size: 0.88rem; font-family: inherit;
+        }
+        .input-row button:hover, .location-row button:hover { background: var(--accent-hover); }
+        .input-row button:active, .location-row button:active { transform: scale(0.98); }
+
+        .instructions {
+            background: var(--accent-light); border: 1px solid #fde68a;
+            border-radius: 8px; padding: 10px; text-align: center; font-size: 0.62rem;
+            color: var(--accent); display: flex; align-items: center;
+            justify-content: center; gap: 6px; font-weight: 600;
+            width: 80%; flex-shrink: 0;
+        }
+
+        .airspace-legend {
+            background: var(--gray-bg); border: 1px solid var(--gray-border);
+            border-radius: 8px; padding: 11px 13px; margin-bottom: 14px;
+        }
+        .legend-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 9px; }
+        .legend-header span { font-size: 0.72rem; font-weight: 700; color: var(--fg-secondary); text-transform: uppercase; letter-spacing: 0.06em; }
+        .toggle { position: relative; display: inline-block; width: 34px; height: 18px; flex-shrink: 0; }
+        .toggle input { opacity: 0; width: 0; height: 0; }
+        .toggle-slider { position: absolute; cursor: pointer; inset: 0; background: #d1d5db; border-radius: 18px; transition: 0.2s; }
+        .toggle-slider::before { content: ''; position: absolute; height: 14px; width: 14px; left: 2px; bottom: 2px; background: #fff; border-radius: 50%; transition: 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.15); }
+        .toggle input:checked + .toggle-slider { background: var(--accent); }
+        .toggle input:checked + .toggle-slider::before { transform: translateX(16px); }
+        .legend-items { display: flex; gap: 10px; flex-wrap: wrap; font-size: 0.68rem; color: var(--fg-secondary); }
+        .legend-items span { display: flex; align-items: center; gap: 4px; }
+        .legend-swatch { display: inline-block; width: 14px; height: 3px; border-radius: 2px; }
+        .legend-swatch.dashed { background: repeating-linear-gradient(90deg, currentColor 0 3px, transparent 3px 6px); height: 2px; }
+        .legend-swatch.dot { width: 6px; height: 6px; border-radius: 50%; background: #6b7280; border: 1.5px solid #fff; box-shadow: 0 0 0 1px #9ca3af; }
+
+        .tfr-section { background: var(--gray-bg); border: 1px solid var(--gray-border); border-radius: 8px; padding: 11px 13px; margin-bottom: 14px; }
+        .tfr-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; font-size: 0.72rem; font-weight: 700; color: var(--fg-secondary); text-transform: uppercase; letter-spacing: 0.06em; }
+        .tfr-header span { display: flex; align-items: center; gap: 6px; }
+        .tfr-legend-swatch { display: inline-block; width: 12px; height: 12px; border: 1px solid #9ca3af; border-radius: 2px; background: repeating-linear-gradient(45deg, #9ca3af 0 1.5px, transparent 1.5px 5px); flex-shrink: 0; }
+        .tfr-refresh { border: none; background: none; color: var(--muted); cursor: pointer; padding: 2px 4px; font-size: 0.8rem; border-radius: 4px; }
+        .tfr-refresh:hover { color: var(--fg); background: var(--gray-border); }
+        .tfr-refresh.spinning i { animation: tfrSpin 0.8s linear infinite; }
+        @keyframes tfrSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        .tfr-body { font-size: 0.78rem; color: var(--fg-secondary); }
+        .tfr-loading, .tfr-clear, .tfr-error { padding: 6px 2px; }
+        .tfr-clear { color: var(--green); font-weight: 600; }
+        .tfr-error { color: var(--muted); }
+        .tfr-error a { color: var(--accent); }
+        .tfr-item { padding: 8px 10px; border-radius: 8px; margin-bottom: 6px; border-left: 3px solid; background: #fff; }
+        .tfr-item:last-child { margin-bottom: 0; }
+        .tfr-item.tfr-sec { background: var(--red-bg); border-left-color: var(--red); }
+        .tfr-item.tfr-haz { background: var(--yellow-bg); border-left-color: var(--yellow); }
+        .tfr-item.tfr-other { background: #eff6ff; border-left-color: #2563eb; }
+        .tfr-item-top { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+        .tfr-code { font-weight: 800; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.78rem; text-decoration: none; color: inherit; }
+        .tfr-code:hover { text-decoration: underline; }
+        .tfr-type-badge { font-size: 0.62rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; opacity: 0.75; }
+        .tfr-desc { display: block; margin-top: 3px; font-size: 0.78rem; }
+        .tfr-meta { display: block; margin-top: 3px; font-size: 0.68rem; opacity: 0.7; }
+
+        .result-box { display: none; border-radius: 10px; padding: 16px; border: 1.5px solid transparent; margin-bottom: 12px; }
+        .result-box.active { display: block; animation: slideIn 0.3s ease; }
+        @keyframes slideIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+        .result-box.frz { background: var(--red-bg); border-color: var(--red-border); }
+        .result-box.sfra { background: var(--yellow-bg); border-color: var(--yellow-border); }
+        .result-box.clear { background: var(--green-bg); border-color: var(--green-border); }
+        .result-box.error, .result-box.searching { background: var(--gray-bg); border-color: var(--gray-border); }
+
+        .badge { display: inline-block; padding: 4px 12px; border-radius: 6px; font-weight: 800; font-size: 0.76rem; color: #fff; margin-bottom: 12px; letter-spacing: 0.03em; }
+        .frz .badge { background: var(--red); }
+        .sfra .badge { background: var(--yellow); }
+        .clear .badge { background: var(--green); }
+        .error .badge, .searching .badge { background: #9ca3af; }
+
+        .result-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+        .result-header .badge { margin-bottom: 0; }
+        .copy-btn {
+            display: inline-flex; align-items: center; gap: 7px; padding: 7px 14px; border-radius: 7px;
+            border: 1px solid var(--gray-border); background: #fff; color: var(--fg-secondary);
+            font-size: 0.86rem; font-weight: 700; cursor: pointer; transition: all 0.15s; font-family: inherit;
+        }
+        .copy-btn i { font-size: 1rem; }
+        .copy-btn:hover { background: var(--gray-bg); }
+        .copy-btn:active { transform: scale(0.96); }
+        .copy-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .result-header-actions { display: flex; gap: 6px; }
+
+        .saved-toggle-row { margin-bottom: 12px; }
+        .saved-toggle-btn {
+            width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px;
+            padding: 9px 12px; border-radius: 8px; border: 1px solid var(--gray-border);
+            background: var(--gray-bg); color: var(--fg-secondary); font-size: 0.82rem;
+            font-weight: 700; cursor: pointer; transition: all 0.15s; font-family: inherit;
+        }
+        .saved-toggle-btn:hover { background: var(--gray-border); }
+
+        .saved-panel {
+            background: var(--gray-bg); border: 1px solid var(--gray-border); border-radius: 8px;
+            padding: 11px 13px; margin-bottom: 12px;
+        }
+        .saved-panel-header {
+            display: flex; align-items: center; justify-content: space-between; margin-bottom: 9px;
+            font-size: 0.72rem; font-weight: 700; color: var(--fg-secondary); text-transform: uppercase; letter-spacing: 0.06em;
+        }
+        .saved-clear-btn {
+            border: none; background: none; color: var(--muted); cursor: pointer; font-size: 0.7rem;
+            font-weight: 700; text-transform: none; letter-spacing: 0; font-family: inherit;
+        }
+        .saved-clear-btn:hover { color: var(--red); }
+        .saved-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+        .saved-empty { font-size: 0.78rem; color: var(--muted); padding: 6px 2px; }
+        .saved-item {
+            display: flex; align-items: flex-start; justify-content: space-between; gap: 8px;
+            background: #fff; border: 1px solid var(--gray-border); border-radius: 6px; padding: 8px 10px;
+        }
+        .saved-item-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+        .saved-item-main strong { font-size: 0.8rem; color: var(--fg); word-break: break-word; }
+        .saved-item-detail { font-size: 0.7rem; color: var(--muted); }
+        .saved-item-laanc { font-size: 0.7rem; color: var(--yellow); font-weight: 700; }
+        .saved-item-military { font-size: 0.7rem; color: var(--red); font-weight: 700; }
+        .saved-item-frz { font-size: 0.7rem; color: var(--red); font-weight: 700; }
+        .saved-remove-btn {
+            flex-shrink: 0; border: none; background: none; color: var(--muted); cursor: pointer;
+            font-size: 0.8rem; padding: 2px 4px;
+        }
+        .saved-remove-btn:hover { color: var(--red); }
+        .email-btn {
+            width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px;
+            padding: 9px 12px; border-radius: 8px; border: none; background: var(--accent); color: #fff;
+            font-size: 0.82rem; font-weight: 700; cursor: pointer; transition: all 0.15s; font-family: inherit;
+        }
+        .email-btn:hover { background: var(--accent-hover); }
+        .email-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .copy-saved-btn {
+            width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px;
+            padding: 9px 12px; border-radius: 8px; border: 1px solid var(--gray-border); background: #fff;
+            color: var(--fg-secondary); font-size: 0.82rem; font-weight: 700; cursor: pointer;
+            transition: all 0.15s; font-family: inherit; margin-top: 8px;
+        }
+        .copy-saved-btn:hover { background: var(--gray-bg); }
+        .copy-saved-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .addr-text { font-size: 0.84rem; color: var(--muted); margin-bottom: 14px; word-break: break-word; line-height: 1.55; }
+        .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+        .stat { background: var(--stat-bg); padding: 9px 11px; border-radius: 6px; }
+        .stat-label { font-size: 0.62rem; text-transform: uppercase; color: var(--muted); letter-spacing: 0.07em; margin-bottom: 2px; font-weight: 700; }
+        .stat-val { font-size: 0.95rem; font-weight: 800; font-family: 'SF Mono', 'Fira Code', 'Courier New', monospace; color: var(--fg); }
+
+        .airspace-alerts { margin-bottom: 12px; }
+        .alert-item {
+            padding: 10px 12px; border-radius: 8px; margin-bottom: 6px;
+            font-size: 0.82rem; line-height: 1.5; border-left: 3px solid;
+        }
+        .alert-item:last-child { margin-bottom: 0; }
+        .alert-item.mil { background: var(--red-bg); border-left-color: var(--red); color: #991b1b; }
+        .alert-item.mil-e { background: #fff1f2; border-left-color: #be185d; color: #9f1239; }
+        .alert-item.class-b { background: #eff6ff; border-left-color: #2563eb; color: #1e40af; }
+        .alert-item.class-cd { background: #faf5ff; border-left-color: #9333ea; color: #6b21a8; }
+        .alert-item.unctl { background: var(--gray-bg); border-left-color: #9ca3af; color: var(--fg-secondary); }
+        .alert-item .alert-code { font-weight: 800; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.8rem; }
+        .alert-item .alert-rule { display: block; margin-top: 3px; font-weight: 700; font-size: 0.78rem; }
+        .alert-item .alert-detail { display: block; margin-top: 2px; font-size: 0.76rem; opacity: 0.8; }
+
+        .desc { font-size: 0.83rem; color: var(--fg-secondary); margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--gray-border); line-height: 1.6; }
+
+        .disclaimer { font-size: 0.68rem; color: #9ca3af; margin-top: 14px; line-height: 1.55; border-top: 1px solid var(--gray-border); padding-top: 10px; }
+        .disclaimer strong { color: var(--muted); }
+
+        .custom-pin { width: 20px; height: 20px; background: var(--accent); border: 3px solid #fff; border-radius: 50%; box-shadow: 0 2px 8px rgba(0,0,0,0.25); position: relative; }
+        .custom-pin::after { content: ''; position: absolute; inset: -6px; border-radius: 50%; border: 2px solid var(--accent); animation: ping 1.6s cubic-bezier(0, 0, 0.2, 1) infinite; }
+        @keyframes ping { 75%, 100% { transform: scale(2); opacity: 0; } }
+        .location-arrow-pin {
+            width: 26px; height: 26px; background: #2563eb; border: 3px solid #fff; border-radius: 50%;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3); position: relative;
+            display: flex; align-items: center; justify-content: center; color: #fff; font-size: 11px;
+        }
+        .location-arrow-pin::after { content: ''; position: absolute; inset: -6px; border-radius: 50%; border: 2px solid #2563eb; animation: ping 1.6s cubic-bezier(0, 0, 0.2, 1) infinite; }
+        .apt-dot { border-radius: 50%; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.2); }
+        .unctl-dot { border-radius: 50%; border: 1.5px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,0.1); }
+        .vor-marker { width: 14px; height: 14px; background: #1f2937; border: 2.5px solid #fff; border-radius: 50%; box-shadow: 0 1px 6px rgba(0,0,0,0.25); position: relative; }
+        .vor-marker::after { content: ''; position: absolute; inset: -5px; border-radius: 50%; border: 1.5px solid rgba(31,41,55,0.3); animation: vorPulse 3s ease-in-out infinite; }
+        @keyframes vorPulse { 0%, 100% { transform: scale(1); opacity: 0.5; } 50% { transform: scale(1.5); opacity: 0; } }
+
+        .leaflet-control-zoom a { background: #fff !important; color: #374151 !important; border-color: #d1d5db !important; font-weight: 700 !important; }
+        .leaflet-control-zoom a:hover { background: #f3f4f6 !important; }
+        .leaflet-control-attribution { background: rgba(255,255,255,0.85) !important; color: #9ca3af !important; font-size: 10px !important; }
+        .leaflet-control-attribution a { color: #6b7280 !important; }
+        .leaflet-tooltip {
+            background: #fff !important; color: var(--fg) !important; border: 1px solid #d1d5db !important;
+            box-shadow: 0 3px 12px rgba(0,0,0,0.1) !important; padding: 5px 9px !important;
+            font-size: 11px !important; border-radius: 6px !important;
+        }
+        .leaflet-tooltip-top:before { border-top-color: #fff !important; }
+        .leaflet-tooltip-bottom:before { border-bottom-color: #fff !important; }
+        .leaflet-tooltip-left:before { border-left-color: #fff !important; }
+        .leaflet-tooltip-right:before { border-right-color: #fff !important; }
+        .leaflet-tooltip-apt { font-size: 10px !important; padding: 4px 8px !important; font-weight: 700 !important; }
+
+        @media (max-width: 640px) {
+            .panel { width: calc(100% - 24px); max-height: 48vh; top: auto; bottom: 12px; padding: 18px 16px 14px; left: 12px; border-radius: 12px; }
+        }
+
+        /* Phones in landscape are wide but short, so the width-based rule above often
+           doesn't fire and the bottom-sheet layout would eat too much vertical space
+           anyway. Height-based + orientation targets short landscape screens (phones)
+           without catching landscape tablets, which have plenty of height to spare. */
+        @media (max-height: 500px) and (orientation: landscape) {
+            .panel {
+                width: 300px; max-width: 42vw; max-height: calc(100% - 20px);
+                top: 10px; bottom: auto; left: 10px; padding: 16px 14px 12px; border-radius: 12px;
+            }
+        }
+
+        .auth-overlay {
+            position: fixed; inset: 0; z-index: 5000;
+            background: rgba(17,24,39,0.92);
+            display: flex; align-items: center; justify-content: center;
+        }
+        .auth-overlay.hidden { display: none; }
+        .auth-box {
+            background: #fff; border-radius: 14px; padding: 32px 28px; width: 320px; max-width: calc(100% - 40px);
+            box-shadow: 0 10px 40px rgba(0,0,0,0.35); text-align: center;
+        }
+        .auth-icon { font-size: 1.8rem; color: var(--accent); margin-bottom: 8px; }
+        .auth-box h2 { margin: 0 0 4px; font-size: 1.1rem; font-weight: 800; color: var(--fg); }
+        .auth-sub { margin: 0 0 16px; font-size: 0.82rem; color: var(--muted); }
+        .auth-row { display: flex; gap: 8px; }
+        .auth-row input {
+            flex: 1; padding: 10px 13px; background: var(--input-bg); border: 1.5px solid var(--input-border);
+            border-radius: 8px; font-size: 0.9rem; color: var(--fg); outline: none; font-family: inherit;
+        }
+        .auth-row input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(217,119,6,0.12); background: #fff; }
+        .auth-row button {
+            padding: 10px 16px; background: var(--accent); color: #fff; border: none; border-radius: 8px;
+            font-weight: 700; cursor: pointer; font-size: 0.88rem; font-family: inherit;
+        }
+        .auth-row button:hover { background: var(--accent-hover); }
+        .auth-error { margin-top: 10px; font-size: 0.78rem; color: var(--red); min-height: 1em; }
+    </style>
+</head>
+<body>
+
+    <div id="authOverlay" class="auth-overlay">
+        <div class="auth-box">
+            <div class="auth-icon"><i class="fas fa-lock"></i></div>
+            <h2>DC-FRZ Airspace Check +TFRs</h2>
+            <p class="auth-sub">Enter password to continue</p>
+            <div class="auth-row">
+                <input type="password" id="authInput" placeholder="Password" autocomplete="off">
+                <button id="authSubmit" type="button">Unlock</button>
+            </div>
+            <div id="authError" class="auth-error"></div>
+        </div>
+    </div>
+
+    <div id="map"></div>
+
+    <!-- Hidden defs: diagonal-hatch fill pattern used by the TFR overlay. SVG fill="url(#id)"
+         resolves anywhere in the document, so this doesn't need to live inside Leaflet's own SVG. -->
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+        <defs>
+            <pattern id="tfrHatch" width="8" height="8" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+                <rect width="8" height="8" fill="#9ca3af" fill-opacity="0.05"></rect>
+                <line x1="0" y1="0" x2="0" y2="8" stroke="#9ca3af" stroke-width="3"></line>
+            </pattern>
+        </defs>
+    </svg>
+
+    <div class="panel">
+        <div class="panel-header">
+            <h1>DC-FRZ Airspace Check +TFRs</h1>
+            <p class="sub">UAS Flight Approximator &mdash; Use at your own risk</p>
+        </div>
+
+        <div class="saved-toggle-row">
+            <button id="savedToggleBtn" class="saved-toggle-btn" onclick="toggleSavedPanel()">
+                <i class="fas fa-list-check"></i> Saved Locations (<span id="savedCount">0</span>/8)
+            </button>
+        </div>
+
+        <div id="savedLocationsPanel" class="saved-panel" style="display:none;">
+            <div class="saved-panel-header">
+                <span>Saved Locations</span>
+                <button class="saved-clear-btn" onclick="clearSavedLocations()" title="Clear all">Clear</button>
+            </div>
+            <div id="savedLocationsList" class="saved-list"></div>
+            <button id="emailSavedBtn" class="email-btn" onclick="emailSavedLocations()" disabled>
+                <i class="fas fa-envelope"></i> Email These Locations
+            </button>
+            <button id="copySavedBtn" class="copy-saved-btn" onclick="copySavedLocationsToClipboard()" disabled>
+                <i class="fas fa-copy"></i> Copy to Clipboard
+            </button>
+        </div>
+
+        <div class="location-row">
+            <button onclick="useMyLocation()" aria-label="Use my current location" title="Use my current location"><i class="fas fa-location-arrow"></i></button>
+            <div class="instructions">
+                <i class="fas fa-crosshairs"></i> or Click anywhere on the map to check status
+            </div>
+        </div>
+
+        <div class="input-row">
+            <input type="text" id="addrInput" placeholder="Search an address..." autocomplete="off">
+            <button onclick="searchAddress()" aria-label="Search" title="Search"><i class="fas fa-magnifying-glass"></i></button>
+        </div>
+
+        <div class="airspace-legend">
+            <div class="legend-header">
+                <span>Airport Zones</span>
+                <label class="toggle">
+                    <input type="checkbox" id="airspaceToggle" checked>
+                    <span class="toggle-slider"></span>
+                </label>
+            </div>
+            <div class="legend-items">
+                <span><span class="legend-swatch" style="background:#2563eb;"></span> Class B</span>
+                <span><span class="legend-swatch" style="background:#9333ea;"></span> Class C</span>
+                <span><span class="legend-swatch dashed" style="color:#0d9488;"></span> Class D</span>
+                <span><span class="legend-swatch dashed" style="color:#be185d;"></span> Class E Ext.</span>
+                <span><span class="legend-swatch" style="background:#dc2626;height:3px;border-radius:2px;"></span> Military</span>
+                <span><span class="legend-swatch dot"></span> Uncontrolled</span>
+            </div>
+        </div>
+
+        <div class="tfr-section">
+            <div class="tfr-header">
+                <span><span class="tfr-legend-swatch"></span> Active TFRs in SFRA (30 NM)</span>
+                <button id="tfrRefreshBtn" class="tfr-refresh" title="Refresh TFR data" type="button">
+                    <i class="fas fa-rotate"></i>
+                </button>
+            </div>
+            <div id="tfrBody" class="tfr-body">
+                <div class="tfr-loading">Checking FAA TFR data&hellip;</div>
+            </div>
+        </div>
+
+        <div id="resultBox" class="result-box">
+            <div class="result-header">
+                <div id="badge" class="badge"></div>
+                <div class="result-header-actions">
+                    <button id="saveLocationBtn" class="copy-btn" onclick="saveCurrentLocation()" title="Save this location to your list (max 8)">
+                        <i class="fas fa-bookmark"></i> Save
+                    </button>
+                    <button id="copyResultBtn" class="copy-btn" onclick="copyResultToClipboard()" title="Copy to clipboard">
+                        <i class="fas fa-copy"></i> Copy
+                    </button>
+                </div>
+            </div>
+            <div id="addrText" class="addr-text"></div>
+            <div class="stats">
+                <div class="stat">
+                    <div class="stat-label">Dist from VOR</div>
+                    <div id="distVal" class="stat-val">--</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Bearing</div>
+                    <div id="bearVal" class="stat-val">--</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Latitude</div>
+                    <div id="latVal" class="stat-val">--</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Longitude</div>
+                    <div id="lngVal" class="stat-val">--</div>
+                </div>
+            </div>
+            <div id="alertContainer" class="airspace-alerts"></div>
+            <div id="desc" class="desc"></div>
+        </div>
+
+        <div class="disclaimer">
+            <strong>Disclaimer:</strong> For UAS/drone flight planning approximations only. The FRZ boundary is plotted from the 14 CFR Part 99 legal description but may not perfectly match the FAA charted boundary. Class B zones show only the innermost surface ring (~5 NM). The KDAA Class E extension is approximated as a circular area. Uncontrolled airport awareness zones are 2 NM circles — not regulatory airspace. LAANC and waiver guidance shown is approximate. The TFR list is pulled live from the FAA's public TFR map data via a third-party CORS proxy, which may occasionally be unavailable — a manual-check link is shown if so. Do not rely on this tool. Always verify with official FAA VFR charts, LAANC, and current NOTAMs before any flight.
+        </div>
+    </div>
+
+    <script>
+        /* ============================================================
+         * PASSWORD GATE — client-side only. This is a convenience gate
+         * to keep casual visitors out, NOT real access control: the
+         * password and all app logic ship in this static file, so
+         * anyone who views source can read it. Don't rely on this for
+         * anything that needs actual security.
+         * ============================================================ */
+        (function () {
+            const TFR_APP_PASSWORD = 'dcfrz';
+            const SESSION_KEY = 'dcfrzAuthed';
+            const overlay = document.getElementById('authOverlay');
+            const input = document.getElementById('authInput');
+            const submitBtn = document.getElementById('authSubmit');
+            const errorEl = document.getElementById('authError');
+
+            if (sessionStorage.getItem(SESSION_KEY) === '1') {
+                overlay.classList.add('hidden');
+                return;
+            }
+
+            function tryUnlock() {
+                if (input.value === TFR_APP_PASSWORD) {
+                    sessionStorage.setItem(SESSION_KEY, '1');
+                    overlay.classList.add('hidden');
+                } else {
+                    errorEl.textContent = 'Incorrect password.';
+                    input.value = '';
+                    input.focus();
+                }
+            }
+
+            submitBtn.addEventListener('click', tryUnlock);
+            input.addEventListener('keypress', e => { if (e.key === 'Enter') tryUnlock(); });
+            input.focus();
+        })();
+
+        const VOR = { lat: 38.8525, lng: -77.0375 };
+        const SFRA_NM = 30;
+        const UNCTL_AWARENESS_NM = 2;
+        const R_KM = 6371;
+
+        /* ============================================================
+         * FRZ BOUNDARY — precomputed from the 14 CFR Part 99 legal
+         * description, referenced to the DCA VOR/DME. This single ring
+         * already has the Freeway Airport (W00) overlap subtracted
+         * directly out of it: the outline follows the normal 13 NM arc
+         * until it crosses the W00 1 NM circle (at bearings ~63.98° and
+         * ~72.38° from the DCA VOR), detours along that circle's
+         * near-side arc through the overlap, then rejoins the 13 NM arc.
+         * No separate hole ring or runtime clipping is needed.
+         * Source: FRZoutline.html
+         * ============================================================ */
+        const FRZ_OUTER = [[38.991944,-77.308333],[38.996663,-77.304586],[39.001268,-77.300611],[39.005803,-77.296505],[39.010265,-77.292270],[39.014654,-77.287908],[39.018966,-77.283421],[39.023200,-77.278812],[39.027353,-77.274082],[39.031423,-77.269234],[39.035408,-77.264270],[39.039306,-77.259194],[39.043116,-77.254006],[39.046835,-77.248711],[39.050462,-77.243310],[39.053995,-77.237806],[39.057431,-77.232202],[39.060770,-77.226500],[39.064010,-77.220704],[39.067148,-77.214816],[39.070184,-77.208840],[39.073116,-77.202777],[39.075942,-77.196632],[39.078662,-77.190407],[39.081273,-77.184106],[39.083775,-77.177731],[39.086166,-77.171285],[39.088445,-77.164772],[39.090610,-77.158196],[39.092662,-77.151558],[39.094598,-77.144863],[39.096419,-77.138115],[39.098122,-77.131315],[39.099707,-77.124468],[39.101173,-77.117577],[39.102520,-77.110646],[39.103747,-77.103677],[39.104853,-77.096675],[39.105838,-77.089643],[39.106701,-77.082584],[39.107442,-77.075502],[39.038333,-76.843889],[38.983611,-76.808889],[38.982468,-76.807127],[38.981045,-76.805878],[38.979615,-76.804644],[38.978178,-76.803425],[38.976732,-76.802221],[38.975280,-76.801031],[38.973820,-76.799856],[38.972353,-76.798697],[38.970878,-76.797552],[38.969397,-76.796423],[38.967909,-76.795308],[38.966414,-76.794210],[38.964912,-76.793126],[38.963403,-76.792058],[38.961888,-76.791005],[38.960366,-76.789968],[38.958839,-76.788947],[38.957304,-76.787942],[38.955764,-76.786952],[38.954217,-76.785978],[38.953762,-76.786661],[38.953284,-76.787319],[38.952785,-76.787950],[38.952266,-76.788554],[38.951728,-76.789130],[38.951171,-76.789676],[38.950597,-76.790191],[38.950007,-76.790675],[38.949402,-76.791126],[38.948782,-76.791545],[38.948149,-76.791929],[38.947504,-76.792279],[38.946848,-76.792594],[38.946183,-76.792873],[38.945509,-76.793116],[38.944827,-76.793322],[38.944140,-76.793492],[38.943448,-76.793624],[38.942751,-76.793718],[38.942053,-76.793775],[38.941353,-76.793794],[38.940653,-76.793775],[38.939955,-76.793718],[38.939258,-76.793624],[38.938566,-76.793492],[38.937878,-76.793323],[38.937197,-76.793117],[38.936523,-76.792874],[38.935858,-76.792595],[38.935202,-76.792281],[38.934557,-76.791931],[38.933924,-76.791546],[38.933304,-76.791128],[38.932698,-76.790677],[38.932108,-76.790193],[38.931534,-76.789678],[38.930977,-76.789133],[38.930439,-76.788558],[38.929920,-76.787954],[38.929421,-76.787323],[38.928943,-76.786665],[38.928487,-76.785983],[38.928054,-76.785276],[38.927644,-76.784546],[38.927259,-76.783795],[38.926898,-76.783024],[38.926563,-76.782234],[38.926254,-76.781427],[38.925972,-76.780603],[38.925717,-76.779765],[38.925489,-76.778914],[38.925290,-76.778052],[38.925118,-76.777180],[38.924976,-76.776299],[38.924862,-76.775411],[38.924778,-76.774518],[38.924723,-76.773621],[38.924697,-76.772722],[38.924700,-76.771822],[38.924733,-76.770923],[38.906975,-76.764799],[38.888876,-76.760636],[38.870568,-76.758463],[38.852182,-76.758293],[38.833851,-76.760126],[38.815707,-76.763947],[38.797881,-76.769728],[38.780501,-76.777426],[38.763692,-76.786983],[38.747575,-76.798330],[38.732265,-76.811383],[38.717872,-76.826050],[38.704501,-76.842222],[38.692245,-76.859784],[38.681193,-76.878609],[38.671425,-76.898562],[38.663010,-76.919499],[38.656008,-76.941271],[38.650470,-76.963722],[38.646434,-76.986690],[38.643931,-77.010012],[38.642977,-77.033521],[38.643580,-77.057049],[38.645735,-77.080428],[38.649426,-77.103491],[38.654629,-77.126073],[38.661304,-77.148011],[38.669405,-77.169150],[38.678874,-77.189338],[38.689642,-77.208430],[38.701633,-77.226289],[38.714762,-77.242785],[38.728932,-77.257801],[38.744045,-77.271228],[38.759989,-77.282967],[38.776653,-77.292935],[38.793915,-77.301057],[38.811651,-77.307275],[38.829734,-77.311542],[38.848035,-77.313826]];
+
+        /* W00 (Freeway Airport) exclusion — FAA ARP per AirNav (38-56-28.9N 076-46-20.6W).
+           Must match the center used to build the notch in FRZ_OUTER above. */
+        const W00_EXCL = { lat: 38.94135, lng: -76.77238, radius: 1 };
+
+        /* DCA VOR position used to build FRZ_OUTER's arcs/notch (least-squares fit to the
+           14 CFR Part 99 corner points) — kept separate from the display VOR above since
+           the boundary math needs this exact value, not just the charted VOR location. */
+        const DCA_VOR_FOR_FRZ = { lat: 38.859488, lng: -77.036179 };
+
+        /* Ray-casting point-in-polygon */
+        function isInside(pt, poly) {
+            let inside = false;
+            const x = pt[1], y = pt[0];
+            for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+                const xi = poly[i][1], yi = poly[i][0], xj = poly[j][1], yj = poly[j][0];
+                if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) inside = !inside;
+            }
+            return inside;
+        }
+
+        /* Point is in FRZ if inside the outer boundary — the W00 overlap is already
+           notched out of FRZ_OUTER, so no separate hole check is needed here. */
+        function isInsideFRZ(lat, lng) {
+            return isInside([lat, lng], FRZ_OUTER);
+        }
+
+        /* Point falls in the W00 exclusion notch if it's within 1 NM of the Freeway
+           Airport ARP AND within 13 NM of the DCA VOR — the same two conditions used
+           to carve the notch out of FRZ_OUTER in the first place. */
+        function inW00Exclusion(lat, lng) {
+            const distFromW00 = getDistance(W00_EXCL.lat, W00_EXCL.lng, lat, lng) / 1.852;
+            const distFromDCA = getDistance(DCA_VOR_FOR_FRZ.lat, DCA_VOR_FOR_FRZ.lng, lat, lng) / 1.852;
+            return distFromW00 <= W00_EXCL.radius && distFromDCA <= 13;
+        }
+
+        /* --- CONTROLLED AIRPORTS --- */
+        const airports = [
+            { code: 'KIAD', name: 'Washington Dulles Intl',    lat: 38.9531, lng: -77.4564, cls: 'B', rings: [6],     military: false, extensions: [] },
+            { code: 'KBWI', name: 'BWI Thurgood Marshall',     lat: 39.1753, lng: -76.6683, cls: 'B', rings: [5],     military: false, extensions: [] },
+            { code: 'KADW', name: 'Joint Base Andrews',        lat: 38.8108, lng: -76.8669, cls: 'C', rings: [10, 5], military: true,  extensions: [] },
+            { code: 'KDAA', name: 'Davison Army Airfield',     lat: 38.7100, lng: -77.1533, cls: 'D', rings: [4.3],   military: true,  extensions: [
+                { cls: 'E', radius: 6, label: 'Class E Surface Extension' }
+            ]},
+            { code: 'KHEF', name: 'Manassas Regional',         lat: 38.7275, lng: -77.5153, cls: 'D', rings: [4.5],   military: false, extensions: [] },
+            { code: 'KNYG', name: 'MCAF Quantico (Turner Field)', lat: 38.5037, lng: -77.3050, cls: 'D', rings: [4.3], military: true,  extensions: [] },
+            { code: 'KFDK', name: 'Frederick Municipal',       lat: 39.4158, lng: -77.3756, cls: 'D', rings: [4.3],   military: false, extensions: [] },
+            { code: 'KMTN', name: 'Martin State',              lat: 39.3333, lng: -76.4133, cls: 'D', rings: [4.3],   military: false, extensions: [] },
+        ];
+
+        /* --- UNCONTROLLED AIRPORTS (FAA ARP coordinates) --- */
+        const uncontrolled = [
+            { code: 'KCGS', name: 'College Park Airport',            lat: 38.9806, lng: -76.9205 },
+            { code: 'KVKX', name: 'Potomac Airfield',               lat: 38.7447, lng: -77.0583 },
+            { code: 'W00',  name: 'Freeway Airport',                lat: 38.9019, lng: -76.7739 },
+            { code: 'KRMN', name: 'Stafford Regional Airport',       lat: 38.4314, lng: -77.4189 },
+            { code: 'KHWY', name: 'Warrenton-Fauquier Airport',      lat: 38.6497, lng: -77.7986 },
+            { code: 'KJYO', name: 'Leesburg Executive Airport',      lat: 39.0819, lng: -77.5622 },
+            { code: 'KEZF', name: 'Shannon Airport',                lat: 38.2747, lng: -77.4333 },
+            { code: 'KCJR', name: 'Culpeper Regional Airport',       lat: 38.5058, lng: -77.9986 },
+            { code: 'KFRR', name: 'Front Royal-Warren County',       lat: 38.9497, lng: -78.1947 },
+            { code: 'KOKV', name: 'Winchester Regional Airport',     lat: 39.1497, lng: -78.1633 },
+            { code: 'KGAI', name: 'Montgomery County Airpark',       lat: 39.16853, lng: -77.16660 },
+            { code: 'W50',  name: 'Davis Airport',                  lat: 39.24342, lng: -77.15020 },
+            { code: '2W5',  name: 'Maryland Airport',               lat: 38.5786, lng: -77.1639 },
+            { code: '0W3',  name: 'Harford County Airport',          lat: 39.5800, lng: -76.3036 },
+            { code: 'KANP', name: 'Lee Airport',                    lat: 38.9433, lng: -76.5803 },
+            { code: 'K2W2', name: 'Suburban Airport',               lat: 39.1044, lng: -76.8622 },
+            { code: 'KFME', name: 'Tipton Airport',                 lat: 38.9417, lng: -76.6781 },
+            { code: 'KDKX', name: 'Twin Oaks Airpark',              lat: 38.8631, lng: -76.5581 },
+            { code: '2V2',  name: 'Clearview Airpark',              lat: 39.6036, lng: -77.1006 },
+            { code: 'KDMW', name: 'Carroll County Regional',         lat: 39.6389, lng: -77.0528 },
+            { code: 'K2W6', name: "St. Mary's County Regional",     lat: 38.3783, lng: -76.5361 },
+            { code: 'K2W3', name: 'Cambridge-Dorchester Airport',   lat: 38.5642, lng: -76.0664 },
+            { code: 'KESN', name: 'Easton Airport',                 lat: 38.7744, lng: -76.0692 },
+        ];
+
+        function getAptColor(apt) {
+            if (apt.military) return '#dc2626';
+            return { B: '#2563eb', C: '#9333ea', D: '#0d9488' }[apt.cls] || '#6b7280';
+        }
+
+        const EXT_COLOR = '#be185d';
+        const EXT_STYLE = { weight: 1.5, opacity: 0.55, fillOpacity: 0.03, dashArray: '5 4' };
+
+        const CLS_STYLES = {
+            B: { rings: [{ weight: 2.5, opacity: 0.85, fillOpacity: 0.08, dashArray: null }] },
+            C: { rings: [
+                { weight: 1.5, opacity: 0.6, fillOpacity: 0.04, dashArray: '8 5' },
+                { weight: 2.0, opacity: 0.8, fillOpacity: 0.07, dashArray: null },
+            ]},
+            D: { rings: [{ weight: 1.5, opacity: 0.7, fillOpacity: 0.06, dashArray: '6 5' }] }
+        };
+
+        const RING_LABELS = {
+            B: ['Surface Area (~5 NM)'],
+            C: ['Outer Area', 'Inner Area'],
+            D: ['Class D']
+        };
+
+        const UNCTL_COLOR = '#6b7280';
+
+        /* --- MAP --- */
+        const FRZ_CENTER = { lat: 38.90, lng: -77.05 };
+        const FRZ_DEFAULT_ZOOM = 10;
+
+        /* Mirrors the CSS breakpoint that turns the panel into a bottom sheet
+           on phones in portrait (see "@media (max-width: 640px)" above). */
+        function isMobilePortraitLayout() {
+            return window.matchMedia('(max-width: 640px)').matches;
+        }
+
+        /* Mirrors the CSS breakpoint that docks the panel to the left edge
+           on phones in landscape (see the "orientation: landscape" rule above). */
+        function isMobileLandscapeLayout() {
+            return window.matchMedia('(max-height: 500px) and (orientation: landscape)').matches;
+        }
+
+        /* Centers the map on a point, but nudges that framing so the floating
+           info panel never covers it:
+           - Mobile portrait (panel docked to the bottom): point lands 20% of
+             the way down from the top of the screen instead of dead-center.
+           - Mobile landscape (panel docked to the left): point lands 20% in
+             from the right edge instead of dead-center.
+           - Desktop/laptop (panel floats over the top-left at this size,
+             same as mobile landscape): point lands 40% in from the right
+             edge instead of dead-center. */
+        function setFramedView(latlng, zoom, options) {
+            const target = L.latLng(latlng);
+            let fx = 0.5, fy = 0.5;
+
+            if (isMobilePortraitLayout()) {
+                fy = 0.20;
+            } else if (isMobileLandscapeLayout()) {
+                fx = 0.80;
+            } else {
+                fx = 0.60;
+            }
+
+            const size = map.getSize();
+            const targetPoint = map.project(target, zoom);
+            const shiftedPoint = targetPoint.add(L.point(size.x * (0.5 - fx), size.y * (0.5 - fy)));
+            const adjustedCenter = map.unproject(shiftedPoint, zoom);
+            map.setView(adjustedCenter, zoom, options);
+        }
+
+        const map = L.map('map', { zoomControl: true }).setView([FRZ_CENTER.lat, FRZ_CENTER.lng], FRZ_DEFAULT_ZOOM);
+        setFramedView(FRZ_CENTER, FRZ_DEFAULT_ZOOM, { animate: false });
+
+        /* Re-frame on resize/rotation (e.g. a phone flipping between portrait
+           and landscape, or this page being viewed in a device-preview tool). */
+        let frzFramingResizeTimer = null;
+        window.addEventListener('resize', () => {
+            clearTimeout(frzFramingResizeTimer);
+            frzFramingResizeTimer = setTimeout(() => {
+                setFramedView(FRZ_CENTER, map.getZoom(), { animate: false });
+            }, 150);
+        });
+
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
+            maxZoom: 19
+        }).addTo(map);
+
+        /* Active TFR shapes get drawn into this layer by loadTfrs() below */
+        const tfrLayer = L.layerGroup().addTo(map);
+
+        /* SFRA 30 NM */
+        L.circle([VOR.lat, VOR.lng], {
+            radius: SFRA_NM * 1852, color: '#b45309', weight: 2, opacity: 0.7,
+            fillColor: '#fbbf24', fillOpacity: 0.06, dashArray: '10 6'
+        }).addTo(map).bindTooltip('SFRA Boundary (30 NM)', { sticky: true });
+
+        /* --- FRZ: single-ring outline, W00 overlap already subtracted --- */
+        L.polygon(FRZ_OUTER, {
+            color: '#dc2626', weight: 3, opacity: 0.9,
+            fillColor: '#dc2626', fillOpacity: 0.07
+        }).addTo(map).bindTooltip('FRZ Boundary (14 CFR Part 99)', { sticky: true });
+
+        /* W00 exclusion label */
+        L.circle([W00_EXCL.lat, W00_EXCL.lng], {
+            radius: W00_EXCL.radius * 1852, color: '#dc2626', weight: 1, opacity: 0.4,
+            fillColor: 'none', fillOpacity: 0, dashArray: '3 3', interactive: false
+        }).addTo(map);
+
+        /* --- AIRPORT LAYERS --- */
+        const airportLayer = L.layerGroup();
+
+        airports.forEach(apt => {
+            const color = getAptColor(apt);
+            const style = CLS_STYLES[apt.cls];
+            const labels = RING_LABELS[apt.cls];
+            const milTag = apt.military ? 'Military' : `Class ${apt.cls}`;
+
+            apt.rings.forEach((radiusNm, i) => {
+                const rs = style.rings[i];
+                const circle = L.circle([apt.lat, apt.lng], {
+                    radius: radiusNm * 1852, color: color, weight: rs.weight,
+                    opacity: rs.opacity, fillColor: color, fillOpacity: rs.fillOpacity,
+                    dashArray: rs.dashArray, interactive: true
+                });
+                circle.bindTooltip(
+                    `<strong>${apt.code}</strong> &mdash; ${milTag}<br>${labels[i]}<br>${apt.name}<br>${radiusNm} NM radius`,
+                    { sticky: true, className: 'leaflet-tooltip-apt' }
+                );
+                airportLayer.addLayer(circle);
+            });
+
+            apt.extensions.forEach(ext => {
+                const circle = L.circle([apt.lat, apt.lng], {
+                    radius: ext.radius * 1852, color: EXT_COLOR, weight: EXT_STYLE.weight,
+                    opacity: EXT_STYLE.opacity, fillColor: EXT_COLOR, fillOpacity: EXT_STYLE.fillOpacity,
+                    dashArray: EXT_STYLE.dashArray, interactive: true
+                });
+                circle.bindTooltip(
+                    `<strong>${apt.code}</strong> &mdash; ${ext.label}<br>${apt.name}<br>${ext.radius} NM radius<br><em>Part of ${apt.code} military airspace</em>`,
+                    { sticky: true, className: 'leaflet-tooltip-apt' }
+                );
+                airportLayer.addLayer(circle);
+            });
+
+            const dotSize = 10;
+            const dot = L.marker([apt.lat, apt.lng], {
+                icon: L.divIcon({
+                    className: '',
+                    html: `<div class="apt-dot" style="width:${dotSize}px;height:${dotSize}px;background:${color};"></div>`,
+                    iconSize: [dotSize, dotSize], iconAnchor: [dotSize / 2, dotSize / 2]
+                }),
+                interactive: true
+            });
+            const extNote = apt.extensions.length > 0 ? `<br>Incl. ${apt.extensions.map(e => e.label).join(', ')}` : '';
+            dot.bindTooltip(`<strong>${apt.code}</strong> &mdash; ${apt.name}<br>${milTag} Airspace${extNote}`, { direction: 'bottom', offset: [0, 8], className: 'leaflet-tooltip-apt' });
+            airportLayer.addLayer(dot);
+        });
+
+        uncontrolled.forEach(apt => {
+            const circle = L.circle([apt.lat, apt.lng], {
+                radius: UNCTL_AWARENESS_NM * 1852,
+                color: UNCTL_COLOR, weight: 1, opacity: 0.35,
+                fillColor: UNCTL_COLOR, fillOpacity: 0.04,
+                dashArray: '4 4', interactive: true
+            });
+            circle.bindTooltip(
+                `<strong>${apt.code}</strong> &mdash; Uncontrolled<br>${apt.name}<br>2 NM awareness zone`,
+                { sticky: true, className: 'leaflet-tooltip-apt' }
+            );
+            airportLayer.addLayer(circle);
+
+            const dotSize = 5;
+            const dot = L.marker([apt.lat, apt.lng], {
+                icon: L.divIcon({
+                    className: '',
+                    html: `<div class="unctl-dot" style="width:${dotSize}px;height:${dotSize}px;background:${UNCTL_COLOR};"></div>`,
+                    iconSize: [dotSize, dotSize], iconAnchor: [dotSize / 2, dotSize / 2]
+                }),
+                interactive: true
+            });
+            dot.bindTooltip(`<strong>${apt.code}</strong> &mdash; ${apt.name}<br>Uncontrolled Airport`, { direction: 'bottom', offset: [0, 6], className: 'leaflet-tooltip-apt' });
+            airportLayer.addLayer(dot);
+        });
+
+        airportLayer.addTo(map);
+
+        document.getElementById('airspaceToggle').addEventListener('change', function () {
+            if (this.checked) airportLayer.addTo(map);
+            else map.removeLayer(airportLayer);
+        });
+
+        /* VOR marker */
+        L.marker([VOR.lat, VOR.lng], {
+            icon: L.divIcon({ className: '', html: '<div class="vor-marker"></div>', iconSize: [14, 14], iconAnchor: [7, 7] })
+        }).addTo(map).bindTooltip('DCA VOR/DME');
+
+        let marker = null;
+        let bearingLine = null;
+
+        /* --- MATH --- */
+        function toRad(d) { return d * (Math.PI / 180); }
+        function toDeg(r) { return r * (180 / Math.PI); }
+        function getDistance(lat1, lon1, lat2, lon2) {
+            const dLat = toRad(lat2 - lat1), dLon = toRad(lon2 - lon1);
+            const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+            return R_KM * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        }
+        function getBearing(lat1, lon1, lat2, lon2) {
+            const dLon = toRad(lon2 - lon1);
+            const y = Math.sin(dLon) * Math.cos(toRad(lat2));
+            const x = Math.cos(toRad(lat1)) * Math.sin(toRad(lat2)) - Math.sin(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.cos(dLon);
+            return (toDeg(Math.atan2(y, x)) + 360) % 360;
+        }
+        function getCompass(deg) {
+            const d = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+            return d[Math.round(deg / 22.5) % 16];
+        }
+
+        /* ============================================================
+         * TFR (Temporary Flight Restriction) LOOKUP
+         *
+         * FAA publishes each active TFR as a NOTAM. tfr.faa.gov's own
+         * front end (a Nuxt SPA) pulls shapes from a public GeoServer
+         * WFS layer — no API key needed — but that endpoint doesn't
+         * send Access-Control-Allow-Origin, so a browser fetch() from
+         * this static file is blocked by CORS. We route through a
+         * public CORS-forwarding proxy instead (with a fallback chain,
+         * since these free services vary in uptime). If every attempt
+         * fails, a manual-check link to the official site is shown.
+         * ============================================================ */
+        const TFR_WFS_URL = 'https://tfr.faa.gov/geoserver/TFR/ows?service=WFS&version=1.1.0&request=GetFeature&typeName=TFR:V_TFR_LOC&maxFeatures=1000&outputFormat=application/json&srsname=EPSG:4326';
+        const TFR_DETAIL_BASE = 'https://tfr.faa.gov/tfr3/?page=detail_';
+        const TFR_LIST_PAGE = 'https://tfr.faa.gov/tfr3/?page=tfr';
+
+        /* NOTAMs that show up in the FAA feed but aren't actually "temporary" —
+           standing security restrictions that have been in place for years —
+           so they're excluded from the SFRA TFR list/overlay. */
+        const TFR_EXCLUDED_NOTAMS = new Set(['4/9383']);
+
+        function escapeHtml(s) {
+            return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        }
+
+        /* Try a direct fetch first (works if FAA ever adds CORS support), then fall
+           back through public proxies. Each entry returns the raw response text. */
+        async function fetchTfrRaw() {
+            const attempts = [
+                () => fetch(TFR_WFS_URL).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); }),
+                () => fetch('https://proxy.cors.sh/' + TFR_WFS_URL).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); }),
+                () => fetch('https://r.jina.ai/' + TFR_WFS_URL).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); }),
+            ];
+            let lastErr;
+            for (const attempt of attempts) {
+                try { return await attempt(); } catch (err) { lastErr = err; }
+            }
+            throw lastErr || new Error('No TFR source reachable');
+        }
+
+        /* r.jina.ai wraps the JSON body in a markdown/text preamble; every other
+           source returns the GeoJSON verbatim, so just locate the first '{'. */
+        function parseTfrResponse(raw) {
+            const start = raw.indexOf('{');
+            if (start < 0) throw new Error('Unexpected TFR response');
+            return JSON.parse(raw.slice(start));
+        }
+
+        /* Flatten a Polygon or MultiPolygon's rings into a flat [lat,lng] point list */
+        function flattenTfrGeometry(geom) {
+            const rings = geom.type === 'Polygon' ? geom.coordinates : geom.coordinates.flat(1);
+            const pts = [];
+            rings.forEach(ring => ring.forEach(([lon, lat]) => pts.push([lat, lon])));
+            return pts;
+        }
+
+        /* A TFR is relevant to the SFRA if the VOR sits inside its shape, or any
+           point of its shape falls within the 30 NM SFRA radius of the VOR. */
+        function tfrAffectsSfra(feature) {
+            const geom = feature.geometry;
+            if (!geom || (geom.type !== 'Polygon' && geom.type !== 'MultiPolygon')) return false;
+            const outerRing = (geom.type === 'Polygon' ? geom.coordinates[0] : geom.coordinates[0][0])
+                .map(([lon, lat]) => [lat, lon]);
+            if (isInside([VOR.lat, VOR.lng], outerRing)) return true;
+            return flattenTfrGeometry(geom).some(([lat, lon]) =>
+                getDistance(VOR.lat, VOR.lng, lat, lon) / 1.852 <= SFRA_NM
+            );
+        }
+
+        function tfrTypeClass(type) {
+            const t = (type || '').toUpperCase();
+            if (t.includes('SECURITY') || t.includes('VIP')) return 'tfr-sec';
+            if (t.includes('HAZARD')) return 'tfr-haz';
+            return 'tfr-other';
+        }
+
+        function formatTfrModDate(raw) {
+            if (!raw || raw.length < 12) return raw || '';
+            const y = raw.slice(0, 4), mo = raw.slice(4, 6), d = raw.slice(6, 8), h = raw.slice(8, 10), mi = raw.slice(10, 12);
+            return `${mo}/${d}/${y} ${h}:${mi} UTC`;
+        }
+
+        function renderTfrItem(m) {
+            return `<div class="tfr-item ${tfrTypeClass(m.type)}">
+                <div class="tfr-item-top">
+                    <a class="tfr-code" href="${escapeHtml(m.detailUrl)}" target="_blank" rel="noopener">${escapeHtml(m.notamId)}</a>
+                    <span class="tfr-type-badge">${escapeHtml(m.type)}</span>
+                </div>
+                <span class="tfr-desc">${escapeHtml(m.title)}</span>
+                <span class="tfr-meta">${m.facility ? escapeHtml(m.facility) + ' &middot; ' : ''}Updated ${escapeHtml(formatTfrModDate(m.modDate))}</span>
+            </div>`;
+        }
+
+        /* Draw each matched TFR's actual shape on the map as a grey diagonal-hatch
+           area, using the same GeoJSON geometry the FAA layer provided. */
+        function renderTfrOverlay(matches) {
+            tfrLayer.clearLayers();
+            matches.forEach(m => {
+                const levelsDeep = m.geometry.type === 'MultiPolygon' ? 2 : 1;
+                const latlngs = L.GeoJSON.coordsToLatLngs(m.geometry.coordinates, levelsDeep);
+                const shape = L.polygon(latlngs, {
+                    color: '#9ca3af', weight: 1.5, opacity: 0.6,
+                    fillColor: 'url(#tfrHatch)', fillOpacity: 0.5,
+                });
+                shape.bindTooltip(
+                    `<strong>${escapeHtml(m.notamId)}</strong> &mdash; ${escapeHtml(m.type)}<br>${escapeHtml(m.title)}`,
+                    { sticky: true, className: 'leaflet-tooltip-apt' }
+                );
+                shape.bindPopup(
+                    `<strong style="font-size:0.95em;">TFR</strong> &mdash; <strong>${escapeHtml(m.notamId)}</strong> (${escapeHtml(m.type)})<br>${escapeHtml(m.title)}<br>` +
+                    `<a href="${escapeHtml(m.detailUrl)}" target="_blank" rel="noopener">Open FAA NOTAM detail</a>`
+                );
+                tfrLayer.addLayer(shape);
+            });
+        }
+
+        async function loadTfrs() {
+            const body = document.getElementById('tfrBody');
+            const btn = document.getElementById('tfrRefreshBtn');
+            btn.classList.add('spinning');
+            body.innerHTML = '<div class="tfr-loading">Checking FAA TFR data&hellip;</div>';
+            try {
+                const raw = await fetchTfrRaw();
+                const geo = parseTfrResponse(raw);
+                if (!geo || !Array.isArray(geo.features)) throw new Error('Malformed TFR response');
+
+                const seen = new Set();
+                const matches = [];
+                geo.features.filter(tfrAffectsSfra).forEach(f => {
+                    const notamId = f.id.replace('V_TFR_LOC.', '');
+                    if (seen.has(notamId) || TFR_EXCLUDED_NOTAMS.has(notamId)) return;
+                    seen.add(notamId);
+                    const p = f.properties || {};
+                    matches.push({
+                        notamId,
+                        title: p.TITLE || '',
+                        type: (p.LEGAL || '').trim(),
+                        facility: p.CNS_LOCATION_ID || '',
+                        modDate: p.LAST_MODIFICATION_DATETIME || '',
+                        detailUrl: TFR_DETAIL_BASE + notamId.replace('/', '_'),
+                        geometry: f.geometry,
+                    });
+                });
+
+                renderTfrOverlay(matches);
+
+                if (matches.length === 0) {
+                    body.innerHTML = '<div class="tfr-clear"><i class="fas fa-circle-check"></i> No active TFRs currently reported within the 30 NM SFRA.</div>';
+                } else {
+                    body.innerHTML = matches.map(renderTfrItem).join('');
+                }
+            } catch (err) {
+                tfrLayer.clearLayers();
+                body.innerHTML = `<div class="tfr-error"><i class="fas fa-triangle-exclamation"></i> Could not reach FAA TFR data right now.
+                    <a href="${TFR_LIST_PAGE}" target="_blank" rel="noopener">Check tfr.faa.gov manually</a>.</div>`;
+            } finally {
+                btn.classList.remove('spinning');
+            }
+        }
+
+        document.getElementById('tfrRefreshBtn').addEventListener('click', loadTfrs);
+        loadTfrs();
+
+        /* --- BUILD ALERT CARDS --- */
+        function buildAlerts(lat, lng) {
+            const container = document.getElementById('alertContainer');
+            let html = '';
+
+            airports.forEach(apt => {
+                const aptDistNm = getDistance(apt.lat, apt.lng, lat, lng) / 1.852;
+
+                let primaryHit = null;
+                for (let i = apt.rings.length - 1; i >= 0; i--) {
+                    if (aptDistNm <= apt.rings[i]) {
+                        primaryHit = { index: i, radius: apt.rings[i] };
+                        break;
+                    }
+                }
+
+                let extHit = null;
+                if (!primaryHit) {
+                    for (let i = apt.extensions.length - 1; i >= 0; i--) {
+                        if (aptDistNm <= apt.extensions[i].radius) {
+                            extHit = { index: i, ...apt.extensions[i] };
+                            break;
+                        }
+                    }
+                }
+
+                if (primaryHit) {
+                    const label = RING_LABELS[apt.cls][primaryHit.index];
+                    if (apt.military) {
+                        html += `<div class="alert-item mil">
+                            <span class="alert-code">${apt.code}</span> — ${apt.name}
+                            <span class="alert-rule"><i class="fas fa-shield-halved"></i> Military airspace — FAA waiver required to fly</span>
+                            <span class="alert-detail">${label} &middot; ${aptDistNm.toFixed(1)} NM from field</span>
+                        </div>`;
+                    } else if (apt.cls === 'B') {
+                        html += `<div class="alert-item class-b">
+                            <span class="alert-code">${apt.code}</span> — ${apt.name}
+                            <span class="alert-rule"><i class="fas fa-lock"></i> Class B airspace — LAANC approval required to fly</span>
+                            <span class="alert-detail">${label} &middot; ${aptDistNm.toFixed(1)} NM from field</span>
+                        </div>`;
+                    } else {
+                        html += `<div class="alert-item class-cd">
+                            <span class="alert-code">${apt.code}</span> — ${apt.name}
+                            <span class="alert-rule"><i class="fas fa-circle-exclamation"></i> Class ${apt.cls} airspace — LAANC approval may be required to fly</span>
+                            <span class="alert-detail">${label} &middot; ${aptDistNm.toFixed(1)} NM from field</span>
+                        </div>`;
+                    }
+                }
+
+                if (extHit) {
+                    html += `<div class="alert-item mil-e">
+                        <span class="alert-code">${apt.code}</span> — ${apt.name}
+                        <span class="alert-rule"><i class="fas fa-shield-halved"></i> ${extHit.label} (military) — FAA waiver required to fly</span>
+                        <span class="alert-detail">${extHit.label} &middot; ${aptDistNm.toFixed(1)} NM from field</span>
+                    </div>`;
+                }
+            });
+
+            uncontrolled.forEach(apt => {
+                const aptDistNm = getDistance(apt.lat, apt.lng, lat, lng) / 1.852;
+                if (aptDistNm <= UNCTL_AWARENESS_NM) {
+                    html += `<div class="alert-item unctl">
+                        <span class="alert-code">${apt.code}</span> — ${apt.name}
+                        <span class="alert-rule"><i class="fas fa-info-circle"></i> Uncontrolled airport — awareness zone, not regulatory airspace</span>
+                        <span class="alert-detail">${aptDistNm.toFixed(1)} NM from field</span>
+                    </div>`;
+                }
+            });
+
+            container.innerHTML = html;
+        }
+
+        /* --- UI --- */
+        /* True if any other bound popup (e.g. a TFR shape's) is currently open —
+           used so the Distance/Bearing/Lat/Long popover can move to the opposite
+           side of the point instead of stacking on top of it. */
+        function anyOtherPopupOpen() {
+            let found = false;
+            tfrLayer.eachLayer(layer => { if (layer.isPopupOpen && layer.isPopupOpen()) found = true; });
+            return found;
+        }
+
+        function markerIconFor(markerType) {
+            if (markerType === 'arrow') {
+                return L.divIcon({
+                    className: '', iconSize: [26, 26], iconAnchor: [13, 13],
+                    html: '<div class="location-arrow-pin"><i class="fas fa-location-arrow"></i></div>'
+                });
+            }
+            return L.divIcon({ className: '', html: '<div class="custom-pin"></div>', iconSize: [20, 20], iconAnchor: [10, 10] });
+        }
+
+        function updateView(lat, lng, name, markerType = 'pin') {
+            if (marker) {
+                marker.setLatLng([lat, lng]);
+                marker.setIcon(markerIconFor(markerType));
+            } else {
+                marker = L.marker([lat, lng], { icon: markerIconFor(markerType) }).addTo(map);
+            }
+
+            if (bearingLine) bearingLine.setLatLngs([[VOR.lat, VOR.lng], [lat, lng]]);
+            else bearingLine = L.polyline([[VOR.lat, VOR.lng], [lat, lng]], { color: '#b45309', weight: 2, opacity: 0.6, dashArray: '6 4' }).addTo(map);
+
+            const distKm = getDistance(VOR.lat, VOR.lng, lat, lng);
+            const distNm = distKm / 1.852;
+            const bear = getBearing(VOR.lat, VOR.lng, lat, lng);
+
+            const popupHtml = `<div style="font-size:12.5px;line-height:1.6;">
+                <strong>Distance:</strong> ${distNm.toFixed(2)} NM<br>
+                <strong>Bearing:</strong> ${Math.round(bear)}&deg; ${getCompass(bear)}<br>
+                <strong>Lat:</strong> ${lat.toFixed(5)}<br>
+                <strong>Long:</strong> ${lng.toFixed(5)}
+            </div>`;
+            /* If another popup (e.g. a TFR shape's) is already open, push ours to the
+               opposite side of the point instead of the default above-center position,
+               so the two don't stack on top of each other. */
+            const opposite = anyOtherPopupOpen();
+            if (marker.getPopup()) marker.unbindPopup();
+            marker.bindPopup(popupHtml, { offset: opposite ? [0, 90] : [0, -6] });
+            marker.openPopup();
+
+            buildAlerts(lat, lng);
+
+            const inFRZ = isInsideFRZ(lat, lng);
+            const inW00 = inW00Exclusion(lat, lng);
+
+            let status, css, desc;
+            if (inFRZ) {
+                status = 'WITHIN FRZ'; css = 'frz';
+                desc = 'This location is inside the Washington D.C. Flight Restricted Zone. All UAS operations require specific FAA authorization and DC FRZ procedures. See airspace alerts below for additional airport-specific requirements.';
+            } else if (inW00) {
+                status = 'NOT IN FRZ — W00 EXCLUSION'; css = 'sfra';
+                desc = 'This location is NOT within the DC FRZ — it falls within the 1 NM W00 (Freeway Airport) exclusion carved out of the FRZ. While excluded from the FRZ itself, this is still inside the SFRA (30 NM) and standard SFRA rules apply. Check alerts below for airport-specific requirements.';
+            } else if (distNm <= SFRA_NM) {
+                status = 'IN SFRA — OUTSIDE FRZ'; css = 'sfra';
+                desc = 'Outside the FRZ but inside the Special Flight Rules Area (30 NM). UAS operations below 400 ft AGL may be permitted but require FAA awareness and airspace compliance. Check alerts below for airport-specific requirements.';
+            } else {
+                status = 'OUTSIDE FRZ & SFRA'; css = 'clear';
+                desc = 'Outside both the FRZ and SFRA. Standard national airspace rules apply. Check alerts below for any airport-specific requirements in this area.';
+            }
+
+            const box = document.getElementById('resultBox');
+            box.className = 'result-box active ' + css;
+            document.getElementById('badge').innerText = status;
+            document.getElementById('addrText').innerText = name || `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+            document.getElementById('distVal').innerText = distNm.toFixed(2) + ' NM';
+            document.getElementById('bearVal').innerText = `${Math.round(bear)}° ${getCompass(bear)}`;
+            document.getElementById('latVal').innerText = lat.toFixed(5);
+            document.getElementById('lngVal').innerText = lng.toFixed(5);
+            document.getElementById('desc').innerText = desc;
+        }
+
+        function showSearching() {
+            const box = document.getElementById('resultBox');
+            box.className = 'result-box active searching';
+            document.getElementById('badge').innerText = 'SEARCHING…';
+            document.getElementById('addrText').innerText = 'Looking up address...';
+            ['distVal','bearVal','latVal','lngVal'].forEach(id => document.getElementById(id).innerText = '--');
+            document.getElementById('alertContainer').innerHTML = '';
+            document.getElementById('desc').innerText = '';
+        }
+
+        function showError(msg) {
+            const box = document.getElementById('resultBox');
+            box.className = 'result-box active error';
+            document.getElementById('badge').innerText = 'ERROR';
+            document.getElementById('addrText').innerText = '';
+            ['distVal','bearVal','latVal','lngVal'].forEach(id => document.getElementById(id).innerText = '--');
+            document.getElementById('alertContainer').innerHTML = '';
+            document.getElementById('desc').innerText = msg;
+        }
+
+        /* Flattens the alert cards in #alertContainer into plain, readable
+           text — one "- code — name / rule / detail" block per alert. */
+        function getAlertsText() {
+            const items = document.querySelectorAll('#alertContainer .alert-item');
+            if (!items.length) return '';
+            const blocks = [];
+            items.forEach(item => {
+                const lines = item.textContent
+                    .split('\n')
+                    .map(l => l.trim())
+                    .filter(l => l.length > 0);
+                blocks.push('- ' + lines.join('\n  '));
+            });
+            return blocks.join('\n\n');
+        }
+
+        /* Copies the whole result box (status, location, stats, alerts,
+           description) to the clipboard as plain text, so it's easy to
+           paste into an email, notes app, flight log, etc. */
+        function copyResultToClipboard() {
+            const badge = document.getElementById('badge').innerText.trim();
+            const addr = document.getElementById('addrText').innerText.trim();
+            const dist = document.getElementById('distVal').innerText.trim();
+            const bear = document.getElementById('bearVal').innerText.trim();
+            const lat = document.getElementById('latVal').innerText.trim();
+            const lng = document.getElementById('lngVal').innerText.trim();
+            const desc = document.getElementById('desc').innerText.trim();
+            const alertsText = getAlertsText();
+
+            let text = `Status: ${badge}\n`;
+            text += `Location: ${addr}\n\n`;
+            text += `Distance from VOR: ${dist}\n`;
+            text += `Bearing: ${bear}\n`;
+            text += `Latitude: ${lat}\n`;
+            text += `Longitude: ${lng}\n`;
+            if (alertsText) text += `\nAirspace Alerts:\n${alertsText}\n`;
+            if (desc) text += `\n${desc}\n`;
+
+            navigator.clipboard.writeText(text)
+                .then(() => showCopyFeedback(true))
+                .catch(() => showCopyFeedback(false));
+        }
+
+        function showCopyFeedback(success) {
+            const btn = document.getElementById('copyResultBtn');
+            if (!btn) return;
+            const original = btn.innerHTML;
+            btn.innerHTML = success
+                ? '<i class="fas fa-check"></i> Copied'
+                : '<i class="fas fa-xmark"></i> Failed';
+            setTimeout(() => { btn.innerHTML = original; }, 1500);
+        }
+
+        /* ============================================================
+         * SAVED LOCATIONS — a small working list (max 8) the user builds
+         * up from checked locations, with an "Email These" button that
+         * hands the whole list to the user's mail client via a mailto:
+         * link. Kept intentionally compact per entry (no full alert/TFR
+         * detail) since mailto: bodies have a practical length ceiling
+         * that varies by mail client — 8 compact entries stays well
+         * within that; full per-location detail risked silent truncation.
+         * ============================================================ */
+        const MAX_SAVED_LOCATIONS = 8;
+        let savedLocations = [];
+
+        /* Pulls out just the alert-rule line(s) matching a pattern (e.g.
+           LAANC or military-waiver wording) from the current alert cards —
+           not the full alert detail, per the "keep saved entries compact"
+           design, but these specific requirements are important enough to
+           carry along anyway. */
+        function getAlertNoteMatching(pattern) {
+            const items = document.querySelectorAll('#alertContainer .alert-item');
+            const notes = [];
+            items.forEach(item => {
+                const ruleEl = item.querySelector('.alert-rule');
+                if (!ruleEl) return;
+                const ruleText = ruleEl.textContent.trim();
+                if (pattern.test(ruleText)) {
+                    const codeEl = item.querySelector('.alert-code');
+                    const code = codeEl ? codeEl.textContent.trim() : '';
+                    notes.push(code ? `${code}: ${ruleText}` : ruleText);
+                }
+            });
+            return notes.join('; ');
+        }
+
+        function currentResultSummary() {
+            const box = document.getElementById('resultBox');
+            if (!box.classList.contains('active')) return null;
+            const lat = document.getElementById('latVal').innerText.trim();
+            const lng = document.getElementById('lngVal').innerText.trim();
+            if (lat === '--' || lng === '--') return null;
+            const badge = document.getElementById('badge').innerText.trim();
+            return {
+                badge,
+                addr: document.getElementById('addrText').innerText.trim(),
+                dist: document.getElementById('distVal').innerText.trim(),
+                bear: document.getElementById('bearVal').innerText.trim(),
+                lat, lng,
+                laanc: getAlertNoteMatching(/LAANC approval/i),
+                military: getAlertNoteMatching(/FAA waiver required/i),
+                frzWaiver: badge === 'WITHIN FRZ' ? 'FAA and TSA Waiver required' : ''
+            };
+        }
+
+        function saveCurrentLocation() {
+            const summary = currentResultSummary();
+            if (!summary) {
+                flashSaveButton(false, 'No Result');
+                return;
+            }
+            if (savedLocations.length >= MAX_SAVED_LOCATIONS) {
+                flashSaveButton(false, 'Full (8 max)');
+                return;
+            }
+            savedLocations.push(summary);
+            renderSavedLocations();
+            flashSaveButton(true, 'Saved');
+        }
+
+        function flashSaveButton(success, label) {
+            const btn = document.getElementById('saveLocationBtn');
+            if (!btn) return;
+            const original = btn.innerHTML;
+            btn.innerHTML = `<i class="fas ${success ? 'fa-check' : 'fa-triangle-exclamation'}"></i> ${label}`;
+            setTimeout(() => { btn.innerHTML = original; }, 1200);
+        }
+
+        function renderSavedLocations() {
+            document.getElementById('savedCount').innerText = savedLocations.length;
+            const list = document.getElementById('savedLocationsList');
+            if (!savedLocations.length) {
+                list.innerHTML = '<div class="saved-empty">No locations saved yet. Check a location, then hit Save.</div>';
+            } else {
+                list.innerHTML = savedLocations.map((loc, i) => `
+                    <div class="saved-item">
+                        <div class="saved-item-main">
+                            <strong>${i + 1}. ${escapeHtml(loc.addr || (loc.lat + ', ' + loc.lng))}</strong>
+                            <span class="saved-item-detail">${escapeHtml(loc.badge)} &middot; ${escapeHtml(loc.lat)}, ${escapeHtml(loc.lng)} &middot; ${escapeHtml(loc.dist)} &middot; ${escapeHtml(loc.bear)}</span>
+                            ${loc.laanc ? `<span class="saved-item-laanc"><i class="fas fa-triangle-exclamation"></i> ${escapeHtml(loc.laanc)}</span>` : ''}
+                            ${loc.military ? `<span class="saved-item-military"><i class="fas fa-shield-halved"></i> ${escapeHtml(loc.military)}</span>` : ''}
+                            ${loc.frzWaiver ? `<span class="saved-item-frz"><i class="fas fa-file-signature"></i> ${escapeHtml(loc.frzWaiver)}</span>` : ''}
+                        </div>
+                        <button class="saved-remove-btn" onclick="removeSavedLocation(${i})" title="Remove"><i class="fas fa-xmark"></i></button>
+                    </div>
+                `).join('');
+            }
+            document.getElementById('emailSavedBtn').disabled = savedLocations.length === 0;
+            document.getElementById('copySavedBtn').disabled = savedLocations.length === 0;
+            document.getElementById('saveLocationBtn').disabled = savedLocations.length >= MAX_SAVED_LOCATIONS;
+        }
+
+        function removeSavedLocation(index) {
+            savedLocations.splice(index, 1);
+            renderSavedLocations();
+        }
+
+        function clearSavedLocations() {
+            savedLocations = [];
+            renderSavedLocations();
+        }
+
+        function toggleSavedPanel() {
+            const panel = document.getElementById('savedLocationsPanel');
+            panel.style.display = (panel.style.display === 'none') ? 'block' : 'none';
+        }
+
+        /* Shared by the Email and Copy-to-clipboard buttons, so both send
+           out the exact same formatted summary. */
+        function buildSavedLocationsText() {
+            return savedLocations.map((loc, i) =>
+                `${i + 1}. ${loc.addr || (loc.lat + ', ' + loc.lng)}\n` +
+                `   Status: ${loc.badge}\n` +
+                `   Lat/Long: ${loc.lat}, ${loc.lng}\n` +
+                `   Distance/Bearing: ${loc.dist} / ${loc.bear}` +
+                (loc.laanc ? `\n   LAANC: ${loc.laanc}` : '') +
+                (loc.military ? `\n   Military: ${loc.military}` : '') +
+                (loc.frzWaiver ? `\n   FRZ: ${loc.frzWaiver}` : '')
+            ).join('\n\n');
+        }
+
+        function emailSavedLocations() {
+            if (!savedLocations.length) return;
+            const subject = `DC-FRZ Check — ${savedLocations.length} Saved Location${savedLocations.length > 1 ? 's' : ''}`;
+            const body = buildSavedLocationsText();
+            window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+        }
+
+        function copySavedLocationsToClipboard() {
+            if (!savedLocations.length) return;
+            navigator.clipboard.writeText(buildSavedLocationsText())
+                .then(() => showSavedCopyFeedback(true))
+                .catch(() => showSavedCopyFeedback(false));
+        }
+
+        function showSavedCopyFeedback(success) {
+            const btn = document.getElementById('copySavedBtn');
+            if (!btn) return;
+            const original = btn.innerHTML;
+            btn.innerHTML = success
+                ? '<i class="fas fa-check"></i> Copied'
+                : '<i class="fas fa-xmark"></i> Failed';
+            setTimeout(() => { btn.innerHTML = original; }, 1500);
+        }
+
+        renderSavedLocations();
+
+        /* --- EVENTS --- */
+        map.on('click', async function (e) {
+            const { lat, lng } = e.latlng;
+            updateView(lat, lng, 'Resolving address…');
+            map.flyTo([lat, lng], Math.max(map.getZoom(), 13), { duration: 0.8 });
+            try {
+                const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18`);
+                const data = await res.json();
+                document.getElementById('addrText').innerText = data.display_name || 'Unknown Location';
+            } catch {
+                document.getElementById('addrText').innerText = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+            }
+        });
+
+        const addrInput = document.getElementById('addrInput');
+        addrInput.addEventListener('keypress', e => { if (e.key === 'Enter') searchAddress(); });
+
+        async function searchAddress() {
+            const q = addrInput.value.trim();
+            if (!q) return;
+            showSearching();
+            try {
+                const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=1`);
+                const data = await res.json();
+                if (!data.length) throw new Error('Address not found. Try a different search term.');
+                const lat = parseFloat(data[0].lat), lng = parseFloat(data[0].lon);
+                updateView(lat, lng, data[0].display_name);
+                map.flyTo([lat, lng], 14, { duration: 1.2 });
+            } catch (err) { showError(err.message); }
+        }
+
+        /* One-shot device geolocation — fetches the position once (not a live
+           track) and drops the blue arrow marker there; clicking the button
+           again re-fetches and updates it, since the user may have moved or
+           the first fix may have been coarse (desktop/laptop location is
+           often Wi-Fi/IP-derived and can be well off from GPS accuracy). */
+        function useMyLocation() {
+            if (!navigator.geolocation) {
+                showError('Geolocation is not supported by this browser.');
+                return;
+            }
+            showSearching();
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    const { latitude, longitude, accuracy } = position.coords;
+                    const label = `Current Location (±${Math.round(accuracy)} m accuracy)`;
+                    updateView(latitude, longitude, label, 'arrow');
+                    map.flyTo([latitude, longitude], Math.max(map.getZoom(), 13), { duration: 0.8 });
+                },
+                (err) => {
+                    showError('Could not get your location: ' + err.message);
+                },
+                { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+            );
+        }
+    </script>
+</body>
+</html>
