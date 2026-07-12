@@ -1,0 +1,1008 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fingers of Quah</title>
+<style>
+  :root{
+    --logan-main:#3b82f6; --logan-dark:#1d4ed8; --logan-glove:#dc2626;
+    --nun-main:#ef4444; --nun-dark:#991b1b; --nun-glove:#111827;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:#0b0f1a;color:#e5e7eb;font-family:'Segoe UI',Helvetica,Arial,sans-serif;}
+  #wrap{max-width:1128px;margin:0 auto;padding:16px 16px 32px;display:flex;flex-direction:column;align-items:center;}
+  h1{margin:8px 0 0;font-size:clamp(26px,6vw,40px);letter-spacing:3px;text-align:center;color:#f1f5f9;}
+  #subtitle{margin:2px 0 4px;font-size:clamp(13px,2.5vw,16px);letter-spacing:1px;text-align:center;}
+  #subtitle .logan{color:var(--logan-main);}
+  #subtitle .nun{color:var(--nun-main);}
+  #subtitle .vs{color:#94a3b8;font-size:0.85em;margin:0 8px;}
+  #hud{width:100%;max-width:1080px;display:flex;gap:16px;margin:8px 0;}
+  .meter{flex:1;display:flex;align-items:center;gap:8px;font-size:13px;}
+  .meter .name{width:78px;font-weight:700;letter-spacing:1px;}
+  .meter.logan .name{color:var(--logan-main);}
+  .meter.nun .name{color:var(--nun-main);text-align:right;}
+  .bar{flex:1;height:16px;background:#1e293b;border-radius:8px;overflow:hidden;border:1px solid #334155;}
+  .bar .fill{height:100%;width:0%;transition:width .2s ease;}
+  .fill.logan{background:linear-gradient(90deg,var(--logan-dark),var(--logan-main));}
+  .fill.nun{background:linear-gradient(90deg,var(--nun-main),var(--nun-dark));}
+  .meter .count{width:44px;font-variant-numeric:tabular-nums;font-size:12px;color:#94a3b8;}
+  .meter.nun .count{text-align:left;}
+  #arena{position:relative;width:100%;max-width:1080px;}
+  canvas{display:block;width:100%;height:auto;background:#0b0f1a;border-radius:12px;box-shadow:0 0 0 2px #1e293b, 0 20px 50px -20px #000;}
+  #overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(5,8,16,0.82);border-radius:12px;}
+  #overlay.hidden{display:none;}
+  #overlayCard{text-align:center;padding:24px;}
+  #overlayCard h2{margin:0 0 6px;font-size:clamp(20px,4vw,30px);}
+  #overlayCard p{color:#94a3b8;margin:0 0 18px;font-size:14px;}
+  #overlayCard button{cursor:pointer;font-size:16px;font-weight:700;letter-spacing:1px;padding:12px 28px;border-radius:8px;border:none;background:linear-gradient(180deg,#f59e0b,#d97706);color:#111;box-shadow:0 6px 0 #92400e;}
+  #overlayCard button:active{transform:translateY(4px);box-shadow:0 2px 0 #92400e;}
+  #controls{display:flex;gap:12px;width:100%;max-width:1080px;margin-top:12px;}
+  #controls button{flex:1;padding:16px 8px;font-size:15px;font-weight:700;letter-spacing:1px;border-radius:10px;border:none;cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent;}
+  #punchBtn{background:linear-gradient(180deg,#f87171,#dc2626);color:#fff;box-shadow:0 5px 0 #7f1d1d;}
+  #punchBtn:active{transform:translateY(4px);box-shadow:0 1px 0 #7f1d1d;}
+  #duckBtn{background:linear-gradient(180deg,#60a5fa,#2563eb);color:#fff;box-shadow:0 5px 0 #1e3a8a;}
+  #duckBtn.active,#duckBtn:active{transform:translateY(4px);box-shadow:0 1px 0 #1e3a8a;}
+  #jumpBtn{background:linear-gradient(180deg,#5eead4,#0891b2);color:#022;box-shadow:0 5px 0 #164e63;}
+  #jumpBtn:active{transform:translateY(4px);box-shadow:0 1px 0 #164e63;}
+  #hint{color:#64748b;font-size:12px;text-align:center;margin:10px 4px 0;line-height:1.5;}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <h1 id="mainTitle">FINGERS OF QUAH</h1>
+  <p id="subtitle"><span class="logan">LOGAN</span><span class="vs">vs</span><span class="nun">NUNCHUCKS</span></p>
+  <div id="hud">
+    <div class="meter logan">
+      <span class="name">LOGAN</span>
+      <div class="bar"><div id="loganBar" class="fill logan"></div></div>
+      <span id="loganCount" class="count">0/30</span>
+    </div>
+    <div class="meter nun">
+      <span id="nunchucksCount" class="count">0/30</span>
+      <div class="bar"><div id="nunchucksBar" class="fill nun"></div></div>
+      <span class="name">NUNCHUCKS</span>
+    </div>
+  </div>
+  <div id="arena">
+    <canvas id="game" width="1080" height="576"></canvas>
+    <div id="overlay">
+      <div id="overlayCard">
+        <h2 id="overlayTitle">Ready to Fight?</h2>
+        <p id="overlaySub">Nunchucks doesn't warm up. Neither should you.</p>
+        <button id="overlayBtn">START FIGHT</button>
+      </div>
+    </div>
+  </div>
+  <div id="controls">
+    <button id="duckBtn">▼ DUCK (K / ↓)</button>
+    <button id="jumpBtn">⤴ JUMP (L / ↑)</button>
+    <button id="punchBtn">👊 PUNCH (J / Space)</button>
+  </div>
+  <p id="hint">Use ←/→ to close distance — punches only land within range. Hold DUCK or tap JUMP (L / ↑) to dodge — jumping escapes any punch, even mid-air. If there's room past Nunchucks, Logan leaps clean over him and turns to keep fighting; if not, he hops backward instead. Tap PUNCH to hit back. Rough Nunchucks up twice and he'll start dancing — rapid retreats followed by surprise rushes. Land 3 hits on him in a row and he unlocks his own jump escape, over or backward, just like you. First fighter to take 30 punches loses.</p>
+  <p id="hint2" style="color:#475569;font-size:11px;text-align:center;margin:4px 4px 0;">Background music and voice lines are generated live in your browser — turn your sound on.</p>
+</div>
+<script>
+(function(){
+  "use strict";
+
+  var canvas = document.getElementById('game');
+  var ctx = canvas.getContext('2d');
+  var W = canvas.width, H = canvas.height;
+  var GROUND_Y = 480;
+
+  var LEG_LEN = 92, TORSO_LEN = 92, HEAD_R = 22, ARM_SEG = 34, SHOULDER_OFF = 13, FOOT_OFF = 20;
+  var DUCK_THRESHOLD = 0.45;
+  var HIT_FLASH_MS = 260;
+
+  var PUNCH_RANGE = 165;
+  var MIN_GAP = 100;
+  var MIN_X = 84, MAX_X = 996;
+  var MOVE_SPEED = 0.34;
+  var JUMP_DURATION = 460;
+  var JUMP_HEIGHT = 72;
+  var JUMP_OVER_PAD = 45;
+  var JUMP_BACK_DISTANCE = 190;
+
+  var GUARD = { theta1:-55, theta2:-70 };
+  var WINDUP = { theta1:-82, theta2:-96 };
+  var EXTEND = { theta1:-6, theta2:8 };
+
+  var PLAYER_DURS = { windup:110, active:110, recover:170 };
+
+  function lerp(a,b,t){ return a+(b-a)*t; }
+  function clamp(v,lo,hi){ return Math.max(lo,Math.min(hi,v)); }
+
+  function makeFighter(x, dir, isPlayer, colorMain, colorDark, glove, gruntPitch){
+    return {
+      x:x, dir:dir, isPlayer:isPlayer,
+      colorMain:colorMain, colorDark:colorDark, glove:glove, gruntPitch:gruntPitch,
+      crouch:0, crouchTarget:0,
+      punch:{ state:'idle', t:0, durs:PLAYER_DURS, feint:false },
+      hitsTaken:0, hitFlash:0,
+      jumping:false, jumpT:0, jumpStartX:0, jumpEndX:0,
+      hitStreak:0, canJumpEscape:false, moveSpeed:0.4,
+      evasive:false, moveMode:'normal', moveTimer:0,
+      idleT: Math.random()*1000
+    };
+  }
+
+  var logan = makeFighter(306, 1, true, '#3b82f6', '#1d4ed8', '#dc2626', 190);
+  var nunchucks = makeFighter(774, -1, false, '#ef4444', '#991b1b', '#111827', 105);
+
+  var running = false;
+  var aiTimer = 900;
+  var gameStartTime = 0;
+  var popups = [];
+
+  var CLOSE_THRESHOLD = 190;
+  var FAR_THRESHOLD = 280;
+  var wasClose = false;
+  var announceCooldown = 0;
+  var introAnnounced = false;
+  var TAUNT_LINES = ['Weasle Face', 'U a Stinker', 'Kickin Booty', 'Outta my way', 'Gonna Kick Butt'];
+  var tauntTimer = 0;
+
+  // ---------- Audio ----------
+  var actx = null, masterGain = null, noiseBuffer = null;
+  function initAudio(){
+    if (actx) return;
+    var AC = window.AudioContext || window.webkitAudioContext;
+    actx = new AC();
+    masterGain = actx.createGain();
+    masterGain.gain.value = 0.9;
+    masterGain.connect(actx.destination);
+    var rate = actx.sampleRate, dur = 0.5;
+    noiseBuffer = actx.createBuffer(1, rate*dur, rate);
+    var data = noiseBuffer.getChannelData(0);
+    for (var i=0;i<data.length;i++) data[i] = Math.random()*2-1;
+  }
+
+  // ---------- Chiptune background music ----------
+  var NOTE_FREQS = {
+    C2:65.41, D2:73.42, E2:82.41, F2:87.31, G2:98.00, A2:110.00, B2:123.47, 'F#2':92.50,
+    C3:130.81, D3:146.83, E3:164.81, F3:174.61, G3:196.00, A3:220.00, B3:246.94,
+    C4:261.63, D4:293.66, E4:329.63, F4:349.23, G4:392.00, A4:440.00, B4:493.88, 'D#4':311.13, 'F#4':369.99,
+    C5:523.25, D5:587.33, E5:659.25, F5:698.46, G5:783.99, A5:880.00
+  };
+  function nf(name){ return name ? NOTE_FREQS[name] : 0; }
+
+  var LEAD_PATTERN = ['E5','G5','E5','C5','E5','A5','E5','C5','F5','A5','F5','C5','G5','B4','G5','D5'];
+  var BASS_PATTERN  = ['C2','C2','C2','C2','A2','A2','A2','A2','F2','F2','F2','F2','G2','G2','G2','G2'];
+  var MUSIC_TEMPO = 140;
+  var STEP_DUR = 60/MUSIC_TEMPO/2;
+  var SCHEDULE_AHEAD = 0.12;
+  var LOOKAHEAD_MS = 40;
+
+  var musicGain = null, musicPlaying = false, musicStep = 0, nextNoteTime = 0, musicTimerID = null;
+
+  function scheduleMusicNote(step, time){
+    var leadFreq = nf(LEAD_PATTERN[step % LEAD_PATTERN.length]);
+    var bassFreq = nf(BASS_PATTERN[step % BASS_PATTERN.length]);
+
+    if (leadFreq){
+      var o = actx.createOscillator();
+      o.type = 'square';
+      o.frequency.setValueAtTime(leadFreq, time);
+      var g = actx.createGain();
+      g.gain.setValueAtTime(0.0001, time);
+      g.gain.exponentialRampToValueAtTime(0.11, time+0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, time+STEP_DUR*0.9);
+      o.connect(g); g.connect(musicGain);
+      o.start(time); o.stop(time+STEP_DUR);
+    }
+    if (bassFreq){
+      var ob = actx.createOscillator();
+      ob.type = 'triangle';
+      ob.frequency.setValueAtTime(bassFreq, time);
+      var gb = actx.createGain();
+      gb.gain.setValueAtTime(0.0001, time);
+      gb.gain.exponentialRampToValueAtTime(0.16, time+0.01);
+      gb.gain.exponentialRampToValueAtTime(0.0001, time+STEP_DUR*0.9);
+      ob.connect(gb); gb.connect(musicGain);
+      ob.start(time); ob.stop(time+STEP_DUR);
+    }
+  }
+
+  function musicScheduler(){
+    while (nextNoteTime < actx.currentTime + SCHEDULE_AHEAD){
+      scheduleMusicNote(musicStep, nextNoteTime);
+      nextNoteTime += STEP_DUR;
+      musicStep++;
+    }
+  }
+
+  function startMusic(){
+    if (musicPlaying || !actx) return;
+    musicPlaying = true;
+    musicStep = 0;
+    nextNoteTime = actx.currentTime + 0.05;
+    musicGain = actx.createGain();
+    musicGain.gain.value = 0.32;
+    musicGain.connect(masterGain);
+    musicTimerID = setInterval(musicScheduler, LOOKAHEAD_MS);
+  }
+
+  function stopMusic(){
+    if (musicTimerID){ clearInterval(musicTimerID); musicTimerID = null; }
+    musicPlaying = false;
+  }
+
+  // ---------- Scary game-over music ----------
+  var SCARY_LEAD_PATTERN = ['C4', null, 'F#4', null, 'D#4', null, 'F#4', null];
+  var SCARY_BASS_PATTERN = ['C2', 'C2', 'F#2', 'F#2', 'C2', 'C2', 'F#2', 'F#2'];
+  var SCARY_TEMPO = 78;
+  var SCARY_STEP_DUR = 60/SCARY_TEMPO;
+  var SCARY_SCHEDULE_AHEAD = 0.15;
+  var SCARY_LOOKAHEAD_MS = 50;
+
+  var scaryGain = null, scaryPlaying = false, scaryStep = 0, scaryNextNoteTime = 0, scaryTimerID = null;
+  var droneOsc = null, droneLFO = null, droneLFOGain = null, droneGain = null;
+
+  function scheduleScaryNote(step, time){
+    var leadFreq = nf(SCARY_LEAD_PATTERN[step % SCARY_LEAD_PATTERN.length]);
+    var bassFreq = nf(SCARY_BASS_PATTERN[step % SCARY_BASS_PATTERN.length]);
+
+    if (leadFreq){
+      var o = actx.createOscillator();
+      o.type = 'sawtooth';
+      o.frequency.setValueAtTime(leadFreq, time);
+      var filt = actx.createBiquadFilter();
+      filt.type = 'lowpass'; filt.frequency.value = 1100;
+      var g = actx.createGain();
+      g.gain.setValueAtTime(0.0001, time);
+      g.gain.exponentialRampToValueAtTime(0.14, time+0.03);
+      g.gain.exponentialRampToValueAtTime(0.0001, time+SCARY_STEP_DUR*1.8);
+      o.connect(filt); filt.connect(g); g.connect(scaryGain);
+      o.start(time); o.stop(time+SCARY_STEP_DUR*2);
+    }
+    if (bassFreq){
+      var ob = actx.createOscillator();
+      ob.type = 'triangle';
+      ob.frequency.setValueAtTime(bassFreq, time);
+      var gb = actx.createGain();
+      gb.gain.setValueAtTime(0.0001, time);
+      gb.gain.exponentialRampToValueAtTime(0.18, time+0.04);
+      gb.gain.exponentialRampToValueAtTime(0.0001, time+SCARY_STEP_DUR*0.95);
+      ob.connect(gb); gb.connect(scaryGain);
+      ob.start(time); ob.stop(time+SCARY_STEP_DUR);
+    }
+  }
+
+  function scaryScheduler(){
+    while (scaryNextNoteTime < actx.currentTime + SCARY_SCHEDULE_AHEAD){
+      scheduleScaryNote(scaryStep, scaryNextNoteTime);
+      scaryNextNoteTime += SCARY_STEP_DUR;
+      scaryStep++;
+    }
+  }
+
+  function startScaryMusic(){
+    if (scaryPlaying || !actx) return;
+    scaryPlaying = true;
+    scaryStep = 0;
+    scaryNextNoteTime = actx.currentTime + 0.05;
+    scaryGain = actx.createGain();
+    scaryGain.gain.value = 0.4;
+    scaryGain.connect(masterGain);
+    scaryTimerID = setInterval(scaryScheduler, SCARY_LOOKAHEAD_MS);
+
+    droneOsc = actx.createOscillator();
+    droneOsc.type = 'sine';
+    droneOsc.frequency.value = 55;
+    droneGain = actx.createGain();
+    droneGain.gain.value = 0.12;
+    droneLFO = actx.createOscillator();
+    droneLFO.type = 'sine';
+    droneLFO.frequency.value = 4.5;
+    droneLFOGain = actx.createGain();
+    droneLFOGain.gain.value = 4;
+    droneLFO.connect(droneLFOGain);
+    droneLFOGain.connect(droneOsc.frequency);
+    droneOsc.connect(droneGain);
+    droneGain.connect(scaryGain);
+    droneOsc.start();
+    droneLFO.start();
+  }
+
+  function stopScaryMusic(){
+    if (scaryTimerID){ clearInterval(scaryTimerID); scaryTimerID = null; }
+    scaryPlaying = false;
+    if (droneOsc){ try { droneOsc.stop(); } catch(e){} droneOsc = null; }
+    if (droneLFO){ try { droneLFO.stop(); } catch(e){} droneLFO = null; }
+  }
+
+  function playGrunt(pitch){
+    if (!actx) return;
+    var t = actx.currentTime;
+    var osc = actx.createOscillator();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(pitch*1.6, t);
+    osc.frequency.exponentialRampToValueAtTime(Math.max(pitch*0.5,40), t+0.16);
+    var gain = actx.createGain();
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(0.32, t+0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t+0.19);
+    var filt = actx.createBiquadFilter();
+    filt.type = 'lowpass'; filt.frequency.value = 1300;
+    osc.connect(filt); filt.connect(gain); gain.connect(masterGain);
+    osc.start(t); osc.stop(t+0.22);
+
+    var noise = actx.createBufferSource();
+    noise.buffer = noiseBuffer;
+    var nGain = actx.createGain();
+    nGain.gain.setValueAtTime(0.14, t);
+    nGain.gain.exponentialRampToValueAtTime(0.0001, t+0.12);
+    var nFilt = actx.createBiquadFilter();
+    nFilt.type = 'bandpass'; nFilt.frequency.value = pitch*3; nFilt.Q.value = 0.7;
+    noise.connect(nFilt); nFilt.connect(nGain); nGain.connect(masterGain);
+    noise.start(t); noise.stop(t+0.12);
+  }
+
+  function playImpact(){
+    if (!actx) return;
+    var t = actx.currentTime;
+    var src = actx.createBufferSource();
+    src.buffer = noiseBuffer;
+    var filt = actx.createBiquadFilter();
+    filt.type = 'lowpass';
+    filt.frequency.setValueAtTime(1000, t);
+    filt.frequency.exponentialRampToValueAtTime(140, t+0.16);
+    var gain = actx.createGain();
+    gain.gain.setValueAtTime(0.65, t);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t+0.2);
+    src.connect(filt); filt.connect(gain); gain.connect(masterGain);
+    src.start(t); src.stop(t+0.22);
+  }
+
+  function playPunchYell(){
+    try {
+      if ('speechSynthesis' in window){
+        window.speechSynthesis.cancel();
+        var u = new SpeechSynthesisUtterance('Quahhh-so!');
+        u.rate = 1.35; u.pitch = 1.3; u.volume = 1;
+        window.speechSynthesis.speak(u);
+      }
+    } catch (e) {}
+  }
+
+  function announceIntro(){
+    try {
+      if ('speechSynthesis' in window){
+        window.speechSynthesis.cancel();
+        var u = new SpeechSynthesisUtterance('Play the Fingers of Quah, if you dare!');
+        u.rate = 0.92; u.pitch = 1.0; u.volume = 1;
+        window.speechSynthesis.speak(u);
+      }
+    } catch (e) {}
+  }
+
+  function playRandomTaunt(){
+    try {
+      if ('speechSynthesis' in window){
+        window.speechSynthesis.cancel();
+        var line = TAUNT_LINES[Math.floor(Math.random()*TAUNT_LINES.length)];
+        var u = new SpeechSynthesisUtterance(line);
+        u.rate = 1.05; u.pitch = 1.0; u.volume = 1;
+        window.speechSynthesis.speak(u);
+      }
+    } catch (e) {}
+  }
+
+  function announceFingersOfQuah(){
+    try {
+      if ('speechSynthesis' in window){
+        window.speechSynthesis.cancel();
+        var u = new SpeechSynthesisUtterance('Fingers of Quah!');
+        u.rate = 0.95; u.pitch = 1.0; u.volume = 1;
+        window.speechSynthesis.speak(u);
+      }
+    } catch (e) {}
+  }
+
+  function playNunchucksJumpTaunt(){
+    if (actx){
+      var t = actx.currentTime;
+      var osc = actx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(220, t);
+      osc.frequency.exponentialRampToValueAtTime(700, t+0.18);
+      var gain = actx.createGain();
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(0.22, t+0.05);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t+0.22);
+      osc.connect(gain); gain.connect(masterGain);
+      osc.start(t); osc.stop(t+0.24);
+    }
+    try {
+      if ('speechSynthesis' in window){
+        window.speechSynthesis.cancel();
+        var u = new SpeechSynthesisUtterance('Lame dude!');
+        u.rate = 1.05; u.pitch = 0.75; u.volume = 1;
+        window.speechSynthesis.speak(u);
+      }
+    } catch (e) {}
+  }
+
+  function playJumpEscape(){
+    if (actx){
+      var t = actx.currentTime;
+      var osc = actx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(300, t);
+      osc.frequency.exponentialRampToValueAtTime(900, t+0.18);
+      var gain = actx.createGain();
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(0.25, t+0.05);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t+0.22);
+      osc.connect(gain); gain.connect(masterGain);
+      osc.start(t); osc.stop(t+0.24);
+    }
+    try {
+      if ('speechSynthesis' in window){
+        window.speechSynthesis.cancel();
+        var u = new SpeechSynthesisUtterance('Jump escape!');
+        u.rate = 1.1; u.pitch = 1.0; u.volume = 1;
+        window.speechSynthesis.speak(u);
+      }
+    } catch (e) {}
+  }
+
+  function playWhiff(){
+    if (!actx) return;
+    var t = actx.currentTime;
+    var src = actx.createBufferSource();
+    src.buffer = noiseBuffer;
+    var filt = actx.createBiquadFilter();
+    filt.type = 'highpass';
+    filt.frequency.setValueAtTime(1800, t);
+    var gain = actx.createGain();
+    gain.gain.setValueAtTime(0.18, t);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t+0.14);
+    src.connect(filt); filt.connect(gain); gain.connect(masterGain);
+    src.start(t); src.stop(t+0.16);
+  }
+
+  // ---------- Difficulty ramp ----------
+  function difficultyT(){
+    if (!gameStartTime) return 0;
+    return clamp((performance.now()-gameStartTime)/60000, 0, 1);
+  }
+  function aiIntervalRange(){
+    var d = difficultyT();
+    return [ lerp(900,500,d), lerp(1900,1100,d) ];
+  }
+  function dodgeChance(){ return lerp(0.15,0.38,difficultyT()); }
+  function feintChance(){ return lerp(0.10,0.25,difficultyT()); }
+  function jumpEscapeChance(){ return lerp(0.18,0.4,difficultyT()); }
+  function aiWindup(){ return lerp(300,190,difficultyT()); }
+  function nunchucksSpeed(){ return lerp(0.16,0.30,difficultyT()); }
+
+  function inRange(a,b){ return Math.abs(a.x-b.x) <= PUNCH_RANGE; }
+
+  // ---------- Punch state machine ----------
+  function startPunch(f, durs, feint){
+    if (f.punch.state !== 'idle') return false;
+    if (f.crouch > 0.3 || f.jumping) return false;
+    f.punch.state = 'windup';
+    f.punch.t = 0;
+    f.punch.durs = durs;
+    f.punch.feint = !!feint;
+    return true;
+  }
+
+  function resolvePunch(attacker, defender){
+    if (!inRange(attacker, defender)){
+      spawnPopup(defender, 'MISS', '#94a3b8');
+      playWhiff();
+      if (defender === nunchucks) nunchucks.hitStreak = 0;
+      return;
+    }
+    if (defender.jumping){
+      spawnPopup(defender, 'ESCAPED!', '#38bdf8');
+      playWhiff();
+      if (defender === nunchucks) nunchucks.hitStreak = 0;
+      return;
+    }
+    if (defender.crouch >= DUCK_THRESHOLD){
+      spawnPopup(defender, 'DUCK!', '#ffd166');
+      playWhiff();
+      if (defender === nunchucks) nunchucks.hitStreak = 0;
+    } else {
+      defender.hitsTaken++;
+      defender.hitFlash = HIT_FLASH_MS;
+      spawnPopup(defender, 'HIT!', '#ff4d4d');
+      playImpact();
+      if (defender === nunchucks){
+        nunchucks.hitStreak++;
+        if (nunchucks.hitStreak >= 3) nunchucks.canJumpEscape = true;
+        if (nunchucks.hitsTaken === 2 && !nunchucks.evasive){
+          nunchucks.evasive = true;
+          nunchucks.moveMode = 'retreat';
+          nunchucks.moveTimer = 950 + Math.random()*950;
+          nunchucks.moveSpeed = 0.58 + Math.random()*0.24;
+        }
+      }
+      updateUI();
+      checkWin();
+    }
+  }
+
+  function updatePunch(f, dt, opponent){
+    if (f.punch.state === 'idle') return;
+    f.punch.t += dt;
+    var d = f.punch.durs[f.punch.state];
+    if (f.punch.t >= d){
+      f.punch.t -= d;
+      if (f.punch.state === 'windup'){
+        f.punch.state = 'active';
+        playGrunt(f.gruntPitch);
+        if (f === logan) playPunchYell();
+        if (!f.punch.feint) resolvePunch(f, opponent);
+      } else if (f.punch.state === 'active'){
+        f.punch.state = 'recover';
+      } else {
+        f.punch.state = 'idle';
+      }
+    }
+  }
+
+  // ---------- Player input ----------
+  function tryPlayerPunch(){
+    if (!running) return;
+    startPunch(logan, PLAYER_DURS, false);
+    maybeScheduleDodge();
+  }
+  function setLoganDuck(down){
+    if (!running) return;
+    if (logan.jumping) return;
+    if (down){
+      if (logan.punch.state === 'idle' || logan.punch.state === 'recover') logan.crouchTarget = 1;
+    } else {
+      logan.crouchTarget = 0;
+    }
+  }
+
+  function performJump(f, opponent){
+    var fLeft = f.x < opponent.x;
+    var beyondRoom = fLeft ? (MAX_X - opponent.x) : (opponent.x - MIN_X);
+    var requiredRoom = MIN_GAP + JUMP_OVER_PAD + 15;
+
+    f.jumpStartX = f.x;
+    f.jumpT = 0;
+    f.jumping = true;
+    f.crouchTarget = 0;
+
+    var overJump = beyondRoom >= requiredRoom;
+    if (overJump){
+      f.jumpEndX = clamp(fLeft ? (opponent.x + MIN_GAP + JUMP_OVER_PAD) : (opponent.x - MIN_GAP - JUMP_OVER_PAD), MIN_X, MAX_X);
+    } else {
+      var backDir = fLeft ? -1 : 1;
+      f.jumpEndX = clamp(f.x + backDir*JUMP_BACK_DISTANCE, MIN_X, MAX_X);
+    }
+
+    var label = overJump ? 'JUMP OVER!' : 'JUMP BACK!';
+    if (f === logan){
+      spawnPopup(logan, label, '#38bdf8');
+      playJumpEscape();
+    } else {
+      spawnPopup(nunchucks, label, '#fca5a5');
+      playNunchucksJumpTaunt();
+    }
+  }
+
+  function tryJump(){
+    if (!running) return;
+    if (logan.jumping) return;
+    if (logan.crouch > 0.3) return;
+    if (!(logan.punch.state === 'idle' || logan.punch.state === 'recover')) return;
+    performJump(logan, nunchucks);
+  }
+
+  function maybeScheduleDodge(){
+    if (nunchucks.punch.state !== 'idle' || nunchucks.jumping) return;
+    if (nunchucks.canJumpEscape && Math.random() < jumpEscapeChance()){
+      var jumpDelay = 70 + Math.random()*80;
+      setTimeout(function(){
+        if (!running || nunchucks.jumping || nunchucks.punch.state !== 'idle') return;
+        performJump(nunchucks, logan);
+      }, jumpDelay);
+      return;
+    }
+    if (Math.random() >= dodgeChance()) return;
+    var reactDelay = 60 + Math.random()*90;
+    setTimeout(function(){
+      if (!running || nunchucks.jumping) return;
+      nunchucks.crouchTarget = 1;
+      setTimeout(function(){
+        if (!running) return;
+        nunchucks.crouchTarget = 0;
+      }, PLAYER_DURS.active + 150);
+    }, reactDelay);
+  }
+
+  // ---------- AI attacks ----------
+  function updateAITimer(dt){
+    aiTimer -= dt;
+    if (aiTimer <= 0){
+      if (nunchucks.punch.state === 'idle' && nunchucks.crouch < 0.3 && !nunchucks.jumping && inRange(nunchucks, logan)){
+        var range = aiIntervalRange();
+        aiTimer = range[0] + Math.random()*(range[1]-range[0]);
+        var durs = { windup: aiWindup(), active: 110, recover: 210 };
+        var feint = Math.random() < feintChance();
+        startPunch(nunchucks, durs, feint);
+      } else {
+        aiTimer = 150 + Math.random()*150;
+      }
+    }
+  }
+
+  function updateMovement(dt){
+    var moveDir = (keys.ArrowRight?1:0) - (keys.ArrowLeft?1:0);
+    if (moveDir !== 0 && !logan.jumping){
+      logan.x += moveDir*MOVE_SPEED*dt;
+      logan.x = clamp(logan.x, MIN_X, MAX_X);
+    }
+
+    if (nunchucks.punch.state === 'idle' && !nunchucks.jumping){
+      if (nunchucks.evasive){
+        nunchucks.moveTimer -= dt;
+        if (nunchucks.moveTimer <= 0){
+          if (nunchucks.moveMode === 'retreat'){
+            nunchucks.moveMode = 'advance';
+            nunchucks.moveTimer = 420 + Math.random()*480;
+            nunchucks.moveSpeed = 0.70 + Math.random()*0.28;
+          } else {
+            nunchucks.moveMode = 'retreat';
+            nunchucks.moveTimer = 950 + Math.random()*950;
+            nunchucks.moveSpeed = 0.58 + Math.random()*0.24;
+          }
+        }
+        var awayDir = (nunchucks.x >= logan.x) ? 1 : -1;
+        var spd = nunchucks.moveSpeed;
+        var dirEvasive = nunchucks.moveMode === 'advance' ? -awayDir : awayDir;
+        nunchucks.x += dirEvasive*spd*dt;
+      } else {
+        var gap = nunchucks.x - logan.x;
+        if (Math.abs(gap) > PUNCH_RANGE-15){
+          var dir = gap>0 ? -1 : 1;
+          nunchucks.x += dir*nunchucksSpeed()*dt;
+        }
+      }
+    }
+    nunchucks.x = clamp(nunchucks.x, MIN_X, MAX_X);
+
+    if (!logan.jumping && !nunchucks.jumping) enforceMinGap();
+  }
+
+  function enforceMinGap(){
+    var gap = nunchucks.x - logan.x;
+    if (Math.abs(gap) < MIN_GAP){
+      var mid = (logan.x + nunchucks.x) / 2;
+      var dirSign = gap >= 0 ? 1 : -1;
+      logan.x = clamp(mid - dirSign*MIN_GAP/2, MIN_X, MAX_X);
+      nunchucks.x = clamp(mid + dirSign*MIN_GAP/2, MIN_X, MAX_X);
+    }
+  }
+
+  function updateProximityAnnounce(dt){
+    if (announceCooldown > 0) announceCooldown -= dt;
+    var gap = Math.abs(logan.x - nunchucks.x);
+    if (!wasClose && gap <= CLOSE_THRESHOLD && announceCooldown <= 0){
+      wasClose = true;
+      announceCooldown = 4000;
+      announceFingersOfQuah();
+    } else if (wasClose && gap > FAR_THRESHOLD){
+      wasClose = false;
+    }
+  }
+
+  function updateRandomTaunt(dt){
+    tauntTimer -= dt;
+    if (tauntTimer <= 0){
+      playRandomTaunt();
+      tauntTimer = 7000 + Math.random()*9000;
+    }
+  }
+
+  function updateFacing(){
+    if (logan.x < nunchucks.x){ logan.dir = 1; nunchucks.dir = -1; }
+    else { logan.dir = -1; nunchucks.dir = 1; }
+  }
+
+  // ---------- Popups ----------
+  function spawnPopup(f, text, color){
+    popups.push({ x: f.x, y: GROUND_Y - TORSO_LEN - HEAD_R - 40, text:text, color:color, life:650, maxLife:650 });
+  }
+  function updatePopups(dt){
+    for (var i=popups.length-1;i>=0;i--){
+      popups[i].life -= dt;
+      popups[i].y -= dt*0.03;
+      if (popups[i].life <= 0) popups.splice(i,1);
+    }
+  }
+
+  // ---------- Update ----------
+  function update(dt){
+    if (!running) return;
+    [logan, nunchucks].forEach(function(f){
+      f.idleT += dt;
+      f.crouch += (f.crouchTarget - f.crouch) * Math.min(1, dt/110);
+      if (f.hitFlash > 0) f.hitFlash = Math.max(0, f.hitFlash - dt);
+    });
+    [logan, nunchucks].forEach(function(f){
+      if (f.jumping){
+        f.jumpT += dt;
+        var jp = clamp(f.jumpT/JUMP_DURATION, 0, 1);
+        f.x = lerp(f.jumpStartX, f.jumpEndX, jp);
+        if (f.jumpT >= JUMP_DURATION){
+          f.jumping = false;
+          f.jumpT = 0;
+          f.x = f.jumpEndX;
+        }
+      }
+    });
+    updateMovement(dt);
+    updateFacing();
+    updateProximityAnnounce(dt);
+    updateRandomTaunt(dt);
+    updatePunch(logan, dt, nunchucks);
+    updatePunch(nunchucks, dt, logan);
+    updateAITimer(dt);
+    updatePopups(dt);
+  }
+
+  // ---------- Rendering ----------
+  function drawBackground(){
+    var grad = ctx.createLinearGradient(0,0,0,H);
+    grad.addColorStop(0,'#131a2b');
+    grad.addColorStop(1,'#0b0f1a');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0,0,W,H);
+
+    // ropes
+    ctx.strokeStyle = '#334155';
+    ctx.lineWidth = 5;
+    [84,132,180].forEach(function(y){
+      ctx.beginPath(); ctx.moveTo(36,y); ctx.lineTo(W-36,y); ctx.stroke();
+    });
+    ctx.fillStyle = '#475569';
+    [36, W-36].forEach(function(px){
+      ctx.fillRect(px-7, 72, 14, 408);
+    });
+
+    // mat
+    var matGrad = ctx.createLinearGradient(0,GROUND_Y,0,H);
+    matGrad.addColorStop(0,'#1e2a44');
+    matGrad.addColorStop(1,'#0f1626');
+    ctx.fillStyle = matGrad;
+    ctx.fillRect(0,GROUND_Y,W,H-GROUND_Y);
+    ctx.strokeStyle = '#2c3a5c';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(W/2, GROUND_Y+36, 144, Math.PI, Math.PI*2); ctx.stroke();
+  }
+
+  function idleSway(f, offset){
+    return Math.sin((f.idleT+(offset||0))/420) * 3;
+  }
+
+  function currentArmAngles(f){
+    var s = f.punch.state;
+    if (s === 'idle') return { theta1: GUARD.theta1 + idleSway(f), theta2: GUARD.theta2 };
+    var d = f.punch.durs[s];
+    var p = d>0 ? clamp(f.punch.t/d,0,1) : 1;
+    if (s === 'windup') return { theta1: lerp(GUARD.theta1,WINDUP.theta1,p), theta2: lerp(GUARD.theta2,WINDUP.theta2,p) };
+    if (s === 'active') return { theta1: lerp(WINDUP.theta1,EXTEND.theta1,p), theta2: lerp(WINDUP.theta2,EXTEND.theta2,p) };
+    return { theta1: lerp(EXTEND.theta1,GUARD.theta1,p), theta2: lerp(EXTEND.theta2,GUARD.theta2,p) };
+  }
+
+  function drawArm(sx, sy, dir, angles, mainColor, gloveColor){
+    var a1 = angles.theta1 * Math.PI/180;
+    var elbowX = sx + dir*ARM_SEG*Math.cos(a1);
+    var elbowY = sy + ARM_SEG*Math.sin(a1);
+    var a2 = (angles.theta1+angles.theta2) * Math.PI/180;
+    var fistX = elbowX + dir*ARM_SEG*Math.cos(a2);
+    var fistY = elbowY + ARM_SEG*Math.sin(a2);
+    ctx.lineWidth = 11; ctx.lineCap = 'round'; ctx.strokeStyle = mainColor;
+    ctx.beginPath(); ctx.moveTo(sx,sy); ctx.lineTo(elbowX,elbowY); ctx.lineTo(fistX,fistY); ctx.stroke();
+    ctx.beginPath(); ctx.fillStyle = gloveColor; ctx.arc(fistX,fistY,10,0,Math.PI*2); ctx.fill();
+    ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.stroke();
+  }
+
+  function drawFighter(f){
+    var dir = f.dir, crouch = f.crouch;
+    var recoil = f.hitFlash > 0 ? -dir*(f.hitFlash/HIT_FLASH_MS)*16 : 0;
+    var hipX = f.x + recoil;
+    var jumpProgress = f.jumping ? clamp(f.jumpT/JUMP_DURATION, 0, 1) : 0;
+    var jumpOffset = f.jumping ? -JUMP_HEIGHT*Math.sin(Math.PI*jumpProgress) : 0;
+    var hipY = GROUND_Y - LEG_LEN*(1-0.32*crouch) + jumpOffset;
+    var torsoLen = TORSO_LEN*(1-0.18*crouch);
+    var shoulderLean = f.jumping ? dir*10*Math.sin(Math.PI*jumpProgress) : 0;
+    var shoulderX = hipX + shoulderLean, shoulderY = hipY - torsoLen;
+    var headX = shoulderX, headY = shoulderY - HEAD_R - 10 - crouch*4;
+
+    // legs
+    ctx.strokeStyle = f.colorDark; ctx.lineCap = 'round';
+    [-1,1].forEach(function(side){
+      var footX = hipX + side*FOOT_OFF*(1+0.25*crouch);
+      var footY = GROUND_Y + jumpOffset;
+      var kneeBend = 10 + 22*crouch;
+      var kneeX = hipX + side*FOOT_OFF*0.5 + dir*kneeBend;
+      var kneeY = (hipY+footY)/2 + 6;
+      ctx.lineWidth = 13;
+      ctx.beginPath(); ctx.moveTo(hipX,hipY); ctx.lineTo(kneeX,kneeY); ctx.lineTo(footX,footY); ctx.stroke();
+    });
+
+    // torso
+    ctx.lineWidth = 20; ctx.strokeStyle = f.colorMain;
+    ctx.beginPath(); ctx.moveTo(hipX,hipY); ctx.lineTo(shoulderX,shoulderY); ctx.stroke();
+
+    // rear (guard) arm
+    drawArm(shoulderX - dir*SHOULDER_OFF, shoulderY, dir, { theta1: GUARD.theta1+idleSway(f,500), theta2: GUARD.theta2 }, f.colorMain, f.glove);
+    // lead (punching) arm
+    drawArm(shoulderX + dir*SHOULDER_OFF, shoulderY, dir, currentArmAngles(f), f.colorMain, f.glove);
+
+    // head
+    ctx.beginPath(); ctx.fillStyle = '#f1c27d'; ctx.arc(headX,headY,HEAD_R,0,Math.PI*2); ctx.fill();
+    ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.stroke();
+    // hair / identity marker
+    ctx.fillStyle = f.isPlayer ? '#1e3a8a' : '#111827';
+    if (f.isPlayer){
+      ctx.fillRect(headX-HEAD_R, headY-HEAD_R+2, HEAD_R*2, 7);
+    } else {
+      ctx.beginPath();
+      for (var i=-3;i<=3;i++){
+        ctx.moveTo(headX+i*6, headY-HEAD_R+4);
+        ctx.lineTo(headX+i*6+ (i<0?-4:4), headY-HEAD_R-10);
+        ctx.lineTo(headX+i*6+6, headY-HEAD_R+4);
+      }
+      ctx.fill();
+    }
+    // facing eye
+    ctx.beginPath(); ctx.fillStyle = '#111'; ctx.arc(headX+dir*8, headY+2, 2.4, 0, Math.PI*2); ctx.fill();
+
+    // hit flash tint
+    if (f.hitFlash > 0){
+      ctx.beginPath();
+      ctx.fillStyle = 'rgba(255,60,60,' + (0.45*(f.hitFlash/HIT_FLASH_MS)) + ')';
+      ctx.arc(headX,headY,HEAD_R+4,0,Math.PI*2); ctx.fill();
+    }
+  }
+
+  function drawPopups(){
+    popups.forEach(function(p){
+      var a = clamp(p.life/p.maxLife, 0, 1);
+      ctx.globalAlpha = a;
+      ctx.font = 'bold 20px Segoe UI, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = p.color;
+      ctx.fillText(p.text, p.x, p.y);
+      ctx.globalAlpha = 1;
+    });
+  }
+
+  function draw(){
+    drawBackground();
+    drawFighter(logan);
+    drawFighter(nunchucks);
+    drawPopups();
+  }
+
+  // ---------- Score / win ----------
+  function updateUI(){
+    document.getElementById('loganBar').style.width = (logan.hitsTaken/WIN_SCORE*100)+'%';
+    document.getElementById('nunchucksBar').style.width = (nunchucks.hitsTaken/WIN_SCORE*100)+'%';
+    document.getElementById('loganCount').textContent = logan.hitsTaken+'/'+WIN_SCORE;
+    document.getElementById('nunchucksCount').textContent = nunchucks.hitsTaken+'/'+WIN_SCORE;
+  }
+
+  var WIN_SCORE = 30;
+
+  function checkWin(){
+    if (logan.hitsTaken >= WIN_SCORE) endGame('Nunchucks', 'Nunchucks proves he\'s the nastiest guy in town.');
+    else if (nunchucks.hitsTaken >= WIN_SCORE) endGame('Logan', 'Logan takes Nunchucks down for the count!');
+  }
+
+  function endGame(winner, sub){
+    running = false;
+    stopMusic();
+    startScaryMusic();
+    document.getElementById('overlayTitle').textContent = winner + ' Wins!';
+    document.getElementById('overlaySub').textContent = sub;
+    document.getElementById('overlayBtn').textContent = 'FIGHT AGAIN';
+    document.getElementById('overlay').classList.remove('hidden');
+  }
+
+  function resetGame(){
+    logan.x = 306; nunchucks.x = 774;
+    logan.dir = 1; nunchucks.dir = -1;
+    logan.hitsTaken = 0; nunchucks.hitsTaken = 0;
+    logan.punch = { state:'idle', t:0, durs:PLAYER_DURS, feint:false };
+    nunchucks.punch = { state:'idle', t:0, durs:PLAYER_DURS, feint:false };
+    logan.crouch = 0; logan.crouchTarget = 0;
+    nunchucks.crouch = 0; nunchucks.crouchTarget = 0;
+    logan.hitFlash = 0; nunchucks.hitFlash = 0;
+    logan.jumping = false; logan.jumpT = 0;
+    nunchucks.jumping = false; nunchucks.jumpT = 0;
+    nunchucks.hitStreak = 0; nunchucks.canJumpEscape = false;
+    nunchucks.evasive = false; nunchucks.moveMode = 'normal'; nunchucks.moveTimer = 0; nunchucks.moveSpeed = 0.4;
+    aiTimer = 900;
+    wasClose = false; announceCooldown = 0;
+    tauntTimer = 4000 + Math.random()*4000;
+    gameStartTime = performance.now();
+    popups = [];
+    updateUI();
+  }
+
+  document.getElementById('overlayBtn').addEventListener('click', function(){
+    initAudio();
+    stopScaryMusic();
+    startMusic();
+    if (!introAnnounced){
+      introAnnounced = true;
+      announceIntro();
+    }
+    resetGame();
+    running = true;
+    document.getElementById('overlay').classList.add('hidden');
+  });
+
+  // ---------- Input wiring ----------
+  var keys = {};
+  window.addEventListener('keydown', function(e){
+    if (e.code === 'Space' || e.code === 'KeyJ'){
+      e.preventDefault();
+      if (!e.repeat) tryPlayerPunch();
+    } else if (e.code === 'ArrowDown' || e.code === 'KeyK'){
+      e.preventDefault();
+      setLoganDuck(true);
+    } else if (e.code === 'ArrowUp' || e.code === 'KeyL'){
+      e.preventDefault();
+      if (!e.repeat) tryJump();
+    } else if (e.code === 'ArrowLeft' || e.code === 'ArrowRight'){
+      e.preventDefault();
+      keys[e.code] = true;
+    }
+  });
+  window.addEventListener('keyup', function(e){
+    if (e.code === 'ArrowDown' || e.code === 'KeyK'){
+      e.preventDefault();
+      setLoganDuck(false);
+    } else if (e.code === 'ArrowLeft' || e.code === 'ArrowRight'){
+      e.preventDefault();
+      keys[e.code] = false;
+    }
+  });
+
+  var punchBtn = document.getElementById('punchBtn');
+  var duckBtn = document.getElementById('duckBtn');
+  var jumpBtn = document.getElementById('jumpBtn');
+  function bindHold(el, onDown, onUp){
+    el.addEventListener('mousedown', function(e){ e.preventDefault(); onDown(); });
+    el.addEventListener('mouseup', function(e){ e.preventDefault(); onUp(); });
+    el.addEventListener('mouseleave', function(){ onUp(); });
+    el.addEventListener('touchstart', function(e){ e.preventDefault(); onDown(); }, {passive:false});
+    el.addEventListener('touchend', function(e){ e.preventDefault(); onUp(); }, {passive:false});
+  }
+  punchBtn.addEventListener('click', function(){});
+  bindHold(punchBtn, function(){ tryPlayerPunch(); }, function(){});
+  bindHold(duckBtn, function(){ setLoganDuck(true); duckBtn.classList.add('active'); }, function(){ setLoganDuck(false); duckBtn.classList.remove('active'); });
+  jumpBtn.addEventListener('mousedown', function(e){ e.preventDefault(); tryJump(); });
+  jumpBtn.addEventListener('touchstart', function(e){ e.preventDefault(); tryJump(); }, {passive:false});
+
+  // ---------- Loop ----------
+  var last = 0;
+  function loop(now){
+    var dt = last ? Math.min(now-last, 50) : 16;
+    last = now;
+    update(dt);
+    draw();
+    requestAnimationFrame(loop);
+  }
+  updateUI();
+  draw();
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
